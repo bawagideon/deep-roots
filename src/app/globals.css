@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0E1411;
+  --surface: #151D18;
+  --surface-2: #1D2822;
+  --line: #2A372F;
+  --text: #EAF1EC;
+  --muted: #9AAAA0;
+  --amber: #FFC857;
+  --root-bg: #231A00;
+  --lens-language: #7FB8FF;
+  --lens-culture: #FF9B7A;
+  --lens-mind: #D4A5FF;
+  --lens-money: #9BE564;
+  --lens-tech: #5FE0E8;
+  --lens-origins: #FF86B8;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Custom scrollbar for mobile feel */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+
+/* Amber Root glow animation */
+@keyframes rootGlow {
+  0% {
+    box-shadow: 0 0 0px rgba(255, 200, 87, 0);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(255, 200, 87, 0.28);
+  }
+  100% {
+    box-shadow: 0 0 10px rgba(255, 200, 87, 0.12);
+  }
+}
+
+.root-panel-glow {
+  animation: rootGlow 2.4s ease-in-out infinite alternate;
+}
+
+/* Tab bar blur backdrop */
+.nav-backdrop {
+  background: rgba(14, 20, 17, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
