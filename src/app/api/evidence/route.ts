@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchEvidencePass2 } from "@/lib/ai/decomposition";
+import { verifyClaimsPass2 } from "@/lib/ai/evidence";
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,12 +9,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing or invalid claims array" }, { status: 400 });
     }
 
-    const verifiedClaims = await fetchEvidencePass2(claims);
-    return NextResponse.json({ claims: verifiedClaims });
+    const verified = await verifyClaimsPass2(claims);
+    return NextResponse.json({ claims: verified });
   } catch (error: any) {
     console.error("Evidence API error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to retrieve evidence." },
+      { error: "Failed to verify claims" },
       { status: 500 }
     );
   }

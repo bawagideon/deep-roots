@@ -31,3 +31,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# evaluation reports & temporary test assets
+eval-report.json
+*image_*.jpg

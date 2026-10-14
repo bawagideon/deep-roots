@@ -10,30 +10,54 @@ import {
   GitFork,
   Trash2,
   ShieldCheck,
-  RefreshCw,
 } from "lucide-react";
 import { UserStats, Lens } from "@/types/roots";
 import { getUserStats, clearAllData, getStoredRoots, getStoredEdges } from "@/lib/storage/store";
 import { LENSES } from "@/lib/constants";
+
+interface DayStripItem {
+  iso: string;
+  label: string;
+  isCompleted: boolean;
+  isToday: boolean;
+}
 
 export default function ProgressPage() {
   const router = useRouter();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [rootsCount, setRootsCount] = useState(0);
   const [edgesCount, setEdgesCount] = useState(0);
+  const [dayStrip, setDayStrip] = useState<DayStripItem[]>([]);
 
   useEffect(() => {
-    setStats(getUserStats());
-    setRootsCount(getStoredRoots().length);
-    setEdgesCount(getStoredEdges().length);
+    const loadedStats = getUserStats();
+    const loadedRoots = getStoredRoots();
+    const loadedEdges = getStoredEdges();
+
+    setStats(loadedStats);
+    setRootsCount(loadedRoots.filter((r) => !r.isSeeded).length);
+    setEdgesCount(loadedEdges.length);
+
+    // Calculate rolling past 7 days based on real dates
+    const strip: DayStripItem[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000);
+      const iso = d.toISOString().split("T")[0];
+      const isToday = i === 0;
+      const label = isToday ? "Today" : d.toLocaleDateString("en-US", { weekday: "short" });
+      strip.push({
+        iso,
+        label,
+        isCompleted: loadedStats.activeDays.includes(iso),
+        isToday,
+      });
+    }
+    setDayStrip(strip);
   }, []);
 
   if (!stats) return null;
 
-  const daysOfWeek = ["Mon", "Tue", "Wed", "Today", "Fri", "Sat", "Sun"];
-  const checkedDays = [0, 1, 2, 3]; // Mon, Tue, Wed, Today
-
-  const scansRemaining = Math.max(0, stats.scansLimit - stats.scansToday);
+  const scansRemaining = Math.max(0, stats.scansLimit - (stats.scansToday || 0));
 
   return (
     <div className="flex flex-col min-h-screen px-6 pt-6 pb-28 bg-[#0E1411]">
@@ -63,73 +87,68 @@ export default function ProgressPage() {
           </div>
         </div>
 
-        {/* 7-day strip */}
+        {/* Dynamic Rolling 7-day strip */}
         <div className="grid grid-cols-7 gap-2 mt-5">
-          {daysOfWeek.map((day, idx) => {
-            const isChecked = checkedDays.includes(idx);
-            const isToday = day === "Today";
-
-            return (
-              <div key={day} className="flex flex-col items-center gap-1.5">
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-                    isChecked
-                      ? isToday
-                        ? "bg-[#FFC857] text-[#0E1411] ring-4 ring-[#FFC857]/20 font-bold"
-                        : "bg-[#FFC857] text-[#0E1411] font-bold"
-                      : "bg-[#1D2822] text-[#9AAAA0]/40 border border-[#2A372F]"
-                  }`}
-                >
-                  {isChecked ? <Check className="w-5 h-5 stroke-[3]" /> : null}
-                </div>
-                <span
-                  className={`text-[11px] font-semibold ${
-                    isToday ? "text-[#FFC857]" : "text-[#9AAAA0]"
-                  }`}
-                >
-                  {day}
-                </span>
+          {dayStrip.map((item) => (
+            <div key={item.iso} className="flex flex-col items-center gap-1.5">
+              <div
+                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                  item.isCompleted
+                    ? item.isToday
+                      ? "bg-[#FFC857] text-[#0E1411] ring-4 ring-[#FFC857]/20 font-bold"
+                      : "bg-[#FFC857] text-[#0E1411] font-bold"
+                    : "bg-[#1D2822] text-[#9AAAA0]/40 border border-[#2A372F]"
+                }`}
+              >
+                {item.isCompleted ? <Check className="w-5 h-5 stroke-[3]" /> : null}
               </div>
-            );
-          })}
+              <span
+                className={`text-[11px] font-semibold ${
+                  item.isToday ? "text-[#FFC857]" : "text-[#9AAAA0]"
+                }`}
+              >
+                {item.label}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Counts Summary */}
+      {/* Actual Honest Counts Summary */}
       <div className="grid grid-cols-3 gap-3 mb-6">
         <div className="p-4 bg-[#151D18] border border-[#2A372F] rounded-card">
           <span className="text-[26px] font-extrabold text-[#EAF1EC] tracking-tight block">
             {rootsCount}
           </span>
-          <span className="text-[12px] font-semibold text-[#9AAAA0]">Roots</span>
+          <span className="text-[12px] font-semibold text-[#9AAAA0]">Your roots</span>
         </div>
 
         <div className="p-4 bg-[#151D18] border border-[#2A372F] rounded-card">
           <span className="text-[26px] font-extrabold text-[#EAF1EC] tracking-tight block">
-            {stats.totalRabbitHoles || 7}
+            {stats.totalRabbitHoles}
           </span>
           <span className="text-[12px] font-semibold text-[#9AAAA0]">Rabbit holes</span>
         </div>
 
         <div className="p-4 bg-[#151D18] border border-[#2A372F] rounded-card">
           <span className="text-[26px] font-extrabold text-[#EAF1EC] tracking-tight block">
-            {edgesCount || 9}
+            {edgesCount}
           </span>
-          <span className="text-[12px] font-semibold text-[#9AAAA0]">Links</span>
+          <span className="text-[12px] font-semibold text-[#9AAAA0]">Tree links</span>
         </div>
       </div>
 
-      {/* Lens Levels (Exploration progress) */}
+      {/* Lens Levels */}
       <div className="mb-6">
         <h2 className="text-[18px] font-bold text-[#EAF1EC] tracking-tight mb-3">
-          Lens levels
+          Lens exploration
         </h2>
 
         <div className="p-4 bg-[#151D18] border border-[#2A372F] rounded-card flex flex-col gap-3.5">
           {(Object.keys(LENSES) as Lens[]).map((key) => {
             const lens = LENSES[key];
             const count = stats.lensCounts[key] || 0;
-            const level = Math.max(1, Math.floor(count / 3));
+            const level = Math.max(0, Math.floor(count / 3));
             const progress = Math.min(100, (count / 10) * 100);
 
             return (
@@ -153,7 +172,7 @@ export default function ProgressPage() {
                 </div>
 
                 <span className="text-[12px] font-bold text-[#9AAAA0] w-9 text-right">
-                  Lv {level}
+                  {count > 0 ? `Lv ${level}` : "—"}
                 </span>
               </div>
             );
@@ -243,7 +262,7 @@ export default function ProgressPage() {
           className="text-left text-[12px] font-semibold text-red-400 hover:text-red-300 flex items-center gap-2 py-1 transition-colors"
         >
           <Trash2 className="w-4 h-4" />
-          <span>Delete my saved data</span>
+          <span>Delete all my data</span>
         </button>
       </div>
     </div>

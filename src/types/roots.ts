@@ -42,9 +42,9 @@ export interface CardConcept {
 
 export interface RootsCard {
   title: string;
-  oneLiner: string; // <= 120 chars
+  oneLiner: string;
   inputKind: "photo" | "screenshot" | "text" | "question" | "link";
-  inputSummary: string; // what the model believes it saw
+  inputSummary: string;
   needsClarification?: string;
   root: {
     headline: string;
@@ -52,12 +52,14 @@ export interface RootsCard {
     claimIds: string[];
     lens?: Lens;
   };
-  layers: CardLayer[]; // 2 to 5 chosen specifically for THIS input
-  components: CardComponent[]; // 3 to 6
-  lenses: Lens[]; // ONLY lenses with a real link. 1 to 6
-  nextQuestions: NextQuestion[]; // exactly 3
-  concepts: CardConcept[]; // 2 to 5 for linking across scans
+  layers: CardLayer[];
+  components: CardComponent[];
+  lenses: Lens[];
+  nextQuestions: NextQuestion[];
+  concepts: CardConcept[];
   claims: Claim[];
+  promptVersion?: string;
+  modelUsed?: string;
 }
 
 export interface StoredRoot {
@@ -96,6 +98,49 @@ export interface UserBadge {
   progress?: string;
 }
 
+export type ReadingDepth = "simple" | "standard" | "deep";
+export type ReadingTone = "playful" | "neutral";
+
+export interface UserPreferences {
+  lenses: Lens[];
+  depth: ReadingDepth;
+  language: string;
+  tone: ReadingTone;
+  openTo: "home" | "camera";
+  timezone: string;
+  notifications: {
+    dailyRoot: { enabled: boolean; time: string };
+    streakReminder: boolean;
+    weeklyRecap: boolean;
+    quietHours: { from: string; to: string };
+  };
+  privacy: {
+    imageRetentionDays: 0 | 7 | 30 | 90;
+    shareDefault: "off" | "ask";
+    analytics: boolean;
+  };
+}
+
+export interface Entitlements {
+  plan: "free" | "pro";
+  dailyScanLimit: number;
+  maxRabbitDepth: number;
+  allClaimsEvidence: boolean;
+  fullUnexpectedConnections: boolean;
+  canExportTree: boolean;
+  unwatermarkedShares: boolean;
+  personalizedDailyRoot: boolean;
+}
+
+export interface UserProfile {
+  id: string;
+  displayName: string;
+  email?: string;
+  isAnonymous: boolean;
+  plan: "free" | "pro";
+  memberSince: string;
+}
+
 export interface UserStats {
   streak: number;
   bestStreak: number;
@@ -109,4 +154,6 @@ export interface UserStats {
   totalRabbitHoles: number;
   totalLinks: number;
   badges: UserBadge[];
+  preferences?: UserPreferences;
+  profile?: UserProfile;
 }

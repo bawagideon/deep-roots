@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -13,11 +13,13 @@ import {
   Sparkles,
   AlertTriangle,
   X,
-  Layers,
+  Download,
+  Info,
 } from "lucide-react";
 import { StoredRoot, RootsCard, Claim, Lens } from "@/types/roots";
-import { getStoredRoots, saveRoot, getUserStats, saveUserStats } from "@/lib/storage/store";
+import { getStoredRoots, saveRoot, deleteRoot, getUserStats } from "@/lib/storage/store";
 import { LENSES } from "@/lib/constants";
+import { PaywallModal } from "@/components/paywall/PaywallModal";
 import confetti from "canvas-confetti";
 
 export default function RootCardPage() {
@@ -27,7 +29,7 @@ export default function RootCardPage() {
 
   const [root, setRoot] = useState<StoredRoot | null>(null);
   const [isSaved, setIsSaved] = useState(true);
-  const [sourcesChecked, setSourcesChecked] = useState(false);
+  const [isVerifyingSources, setIsVerifyingSources] = useState(false);
   const [selectedClaimSources, setSelectedClaimSources] = useState<Claim | null>(null);
   const [activeRabbitHole, setActiveRabbitHole] = useState<{
     card: RootsCard;
@@ -38,6 +40,7 @@ export default function RootCardPage() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [reportedClaims, setReportedClaims] = useState<Record<string, boolean>>({});
+  const [showPaywallModal, setShowPaywallModal] = useState(false);
 
   useEffect(() => {
     const all = getStoredRoots();
@@ -46,8 +49,13 @@ export default function RootCardPage() {
     if (found) {
       setRoot(found);
 
-      // Trigger Pass 2: check and attach evidence sources if not yet loaded
-      if (found.card.claims && !sourcesChecked) {
+      // Trigger Pass 2: real source verification if claims don't have sources yet
+      const needsVerification = found.card.claims.some(
+        (c) => (!c.sources || c.sources.length === 0) && c.status === "established"
+      );
+
+      if (needsVerification && !isVerifyingSources) {
+        setIsVerifyingSources(true);
         fetch("/api/evidence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -60,13 +68,13 @@ export default function RootCardPage() {
               const updatedRoot = { ...found, card: updatedCard };
               setRoot(updatedRoot);
               saveRoot(updatedRoot);
-              setSourcesChecked(true);
             }
           })
-          .catch(() => setSourcesChecked(true));
+          .catch(() => {})
+          .finally(() => setIsVerifyingSources(false));
       }
     }
-  }, [rootId, sourcesChecked]);
+  }, [rootId]);
 
   if (!root) {
     return (
@@ -83,10 +91,22 @@ export default function RootCardPage() {
   }
 
   const card = activeRabbitHole ? activeRabbitHole.card : root.card;
-  const establishedCount = card.claims.filter((c) => c.status === "established").length;
-  const verifiedWithSources = card.claims.filter(
+  const verifiedSourcesCount = card.claims.filter(
     (c) => c.sources && c.sources.length > 0
   ).length;
+  const establishedCount = card.claims.filter((c) => c.status === "established").length;
+  const interpretationCount = card.claims.filter((c) => c.status === "interpretation").length;
+
+  const handleToggleBookmark = () => {
+    if (isSaved) {
+      // Remove root from store
+      deleteRoot(root.id);
+      setIsSaved(false);
+    } else {
+      saveRoot(root);
+      setIsSaved(true);
+    }
+  };
 
   const handleDeepen = async (target: {
     kind: "component" | "question";
@@ -94,8 +114,17 @@ export default function RootCardPage() {
     questionText?: string;
   }) => {
     try {
-      setIsDeepening(true);
       const currentDepth = activeRabbitHole ? activeRabbitHole.depth : root.depth;
+      const stats = getUserStats();
+      const plan = stats.profile?.plan || "free";
+      const maxAllowedDepth = plan === "pro" ? 5 : 3;
+
+      if (currentDepth >= maxAllowedDepth) {
+        setShowPaywallModal(true);
+        return;
+      }
+
+      setIsDeepening(true);
 
       const res = await fetch("/api/deepen", {
         method: "POST",
@@ -109,7 +138,11 @@ export default function RootCardPage() {
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to deepen");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to deepen");
+      }
+
       const data = await res.json();
       const childCard: RootsCard = data.card;
 
@@ -123,7 +156,7 @@ export default function RootCardPage() {
         breadcrumb: breadcrumbs,
       });
 
-      // Save as child root in the knowledge tree
+      // Save as child root in persistent store
       const childId = `child-${Date.now()}`;
       const childRoot: StoredRoot = {
         id: childId,
@@ -139,37 +172,36 @@ export default function RootCardPage() {
       };
       saveRoot(childRoot);
 
-      // Trigger confetti on deep exploration milestone!
       try {
-        confetti({ particleCount: 35, spread: 60, origin: { y: 0.8 } });
+        confetti({ particleCount: 30, spread: 50, origin: { y: 0.8 } });
       } catch {}
-    } catch (err) {
-      alert("Could not deepen rabbit hole. Please try again.");
+    } catch (err: any) {
+      alert(err.message || "Could not deepen rabbit hole.");
     } finally {
       setIsDeepening(false);
     }
   };
 
-  const handleShare = () => {
-    setShowShareModal(true);
-  };
-
-  const handleCopyLink = () => {
-    if (typeof window !== "undefined") {
-      navigator.clipboard.writeText(window.location.href);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
-    }
-  };
-
-  const handleReportMistake = (claimId: string) => {
+  const handleReportMistake = async (claimId: string, claimText: string) => {
     setReportedClaims((prev) => ({ ...prev, [claimId]: true }));
+    try {
+      await fetch("/api/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rootId: root.id,
+          claimId,
+          claimText,
+          reason: "User flagged for verification review",
+        }),
+      });
+    } catch {}
   };
 
   return (
     <div className="flex flex-col min-h-screen px-6 pt-6 pb-32 bg-[#0E1411]">
       {/* Top Header Bar */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-4">
         <button
           onClick={() => {
             if (activeRabbitHole) {
@@ -183,18 +215,20 @@ export default function RootCardPage() {
           <ArrowLeft className="w-5 h-5" />
         </button>
 
-        {activeRabbitHole && (
+        {activeRabbitHole ? (
           <div className="px-3 py-1 rounded-full bg-[#1D2822] border border-[#FFC857]/40 text-[#FFC857] text-[12px] font-bold">
             Depth {activeRabbitHole.depth} of 3
           </div>
-        )}
+        ) : root.isSeeded ? (
+          <div className="px-3 py-1 rounded-full bg-[#1D2822] border border-[#2A372F] text-[#9AAAA0] text-[11px] font-medium">
+            Sample Root
+          </div>
+        ) : null}
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => {
-              setIsSaved(!isSaved);
-              if (!isSaved) saveRoot(root);
-            }}
+            onClick={handleToggleBookmark}
+            title={isSaved ? "Remove from Tree" : "Save to Tree"}
             className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors ${
               isSaved
                 ? "bg-[#1D2822] border-[#FFC857] text-[#FFC857]"
@@ -205,7 +239,7 @@ export default function RootCardPage() {
           </button>
 
           <button
-            onClick={handleShare}
+            onClick={() => setShowShareModal(true)}
             className="w-10 h-10 rounded-full bg-[#151D18] border border-[#2A372F] flex items-center justify-center text-[#EAF1EC] hover:bg-[#1D2822] transition-colors"
           >
             <Share2 className="w-5 h-5" />
@@ -227,10 +261,10 @@ export default function RootCardPage() {
         </div>
       )}
 
-      {/* Hero Media / Graphic Header */}
-      <div className="w-full h-44 rounded-card bg-[#151D18] border border-[#2A372F] flex items-center justify-center overflow-hidden mb-6 relative">
+      {/* Header Graphic */}
+      <div className="w-full h-40 rounded-card bg-[#151D18] border border-[#2A372F] flex items-center justify-center overflow-hidden mb-5 relative">
         <div className="text-center p-6">
-          <div className="w-14 h-14 rounded-2xl bg-[#231A00] border border-[#FFC857]/40 mx-auto flex items-center justify-center text-3xl mb-2 shadow-inner">
+          <div className="w-13 h-13 rounded-2xl bg-[#231A00] border border-[#FFC857]/40 mx-auto flex items-center justify-center text-3xl mb-1.5 shadow-inner">
             {card.lenses.includes("origins")
               ? "⏳"
               : card.lenses.includes("tech")
@@ -247,24 +281,34 @@ export default function RootCardPage() {
 
       {/* Title & One-Liner */}
       <div className="mb-4">
-        <h1 className="text-[32px] font-extrabold text-[#EAF1EC] tracking-tight leading-[1.12]">
+        <h1 className="text-[30px] font-extrabold text-[#EAF1EC] tracking-tight leading-[1.12]">
           {card.title}
         </h1>
         <p className="text-[15px] text-[#9AAAA0] leading-snug mt-2">
           {card.oneLiner}
         </p>
 
-        {/* Evidence Sourcing Status */}
-        <div className="flex items-center gap-2 mt-3 text-[13px] text-[#9BE564] font-medium">
-          <Check className="w-4 h-4 stroke-[3]" />
-          <span>
-            Sources attached to {verifiedWithSources > 0 ? verifiedWithSources : establishedCount} of{" "}
-            {card.claims.length} claims
-          </span>
+        {/* Separated Honest Evidence Sourcing Counter */}
+        <div className="mt-3 text-[12px] font-medium flex items-center gap-2">
+          {verifiedSourcesCount > 0 ? (
+            <span className="text-[#9BE564] flex items-center gap-1.5">
+              <Check className="w-3.5 h-3.5 stroke-[3]" />
+              {verifiedSourcesCount} of {card.claims.length} claims verified with external sources
+            </span>
+          ) : isVerifyingSources ? (
+            <span className="text-[#FFC857] animate-pulse">
+              Checking external sources ({establishedCount} established claims)...
+            </span>
+          ) : (
+            <span className="text-[#9AAAA0] flex items-center gap-1">
+              <Info className="w-3.5 h-3.5" />
+              {establishedCount} established claims, {interpretationCount} interpretations
+            </span>
+          )}
         </div>
       </div>
 
-      {/* THE ROOT Panel (amber, soft glow, always highlighted) */}
+      {/* THE ROOT Panel */}
       <div className="bg-[#231A00] border-[1.5px] border-[#FFC857] rounded-card p-5 mb-8 root-panel-glow relative">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[11px] font-extrabold tracking-wider text-[#FFC857] uppercase">
@@ -283,7 +327,7 @@ export default function RootCardPage() {
           )}
         </div>
 
-        <h3 className="text-[20px] font-extrabold text-[#EAF1EC] tracking-tight leading-snug mb-2">
+        <h3 className="text-[19px] font-extrabold text-[#EAF1EC] tracking-tight leading-snug mb-2">
           {card.root.headline}
         </h3>
         <p className="text-[14px] text-[#EAF1EC]/90 leading-relaxed font-normal">
@@ -291,7 +335,7 @@ export default function RootCardPage() {
         </p>
       </div>
 
-      {/* "What it is made of" (Components breakdown) */}
+      {/* Components Breakdown */}
       <div className="mb-8">
         <h2 className="text-[20px] font-bold text-[#EAF1EC] tracking-tight mb-3">
           What it is made of
@@ -393,7 +437,7 @@ export default function RootCardPage() {
             Evidence
           </h2>
           <span className="text-[12px] text-[#9AAAA0]">
-            Checking runs after the card loads
+            Claims & Verifications
           </span>
         </div>
 
@@ -408,14 +452,18 @@ export default function RootCardPage() {
               </p>
 
               <div className="flex items-center justify-between">
-                {/* Status Badge */}
-                {claim.status === "established" ? (
+                {/* Status Badges */}
+                {claim.sources && claim.sources.length > 0 ? (
                   <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#9BE564]/15 text-[#9BE564] border border-[#9BE564]/30">
-                    Established
+                    Established (Sourced)
+                  </span>
+                ) : claim.status === "established" ? (
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#5FE0E8]/15 text-[#5FE0E8] border border-[#5FE0E8]/30">
+                    Established (Pending Sources)
                   </span>
                 ) : claim.status === "interpretation" ? (
                   <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#FF9B7A]/15 text-[#FF9B7A] border border-[#FF9B7A]/30">
-                    Interpretation: widely told, hard to verify
+                    Interpretation: widely told
                   </span>
                 ) : (
                   <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#D4A5FF]/15 text-[#D4A5FF] border border-[#D4A5FF]/30">
@@ -423,7 +471,7 @@ export default function RootCardPage() {
                   </span>
                 )}
 
-                {/* View sources / Report button */}
+                {/* View sources / Report actions */}
                 <div className="flex items-center gap-2">
                   {claim.sources && claim.sources.length > 0 ? (
                     <button
@@ -433,13 +481,13 @@ export default function RootCardPage() {
                       View sources
                     </button>
                   ) : reportedClaims[claim.id] ? (
-                    <span className="text-[11px] text-[#9AAAA0]">Reported</span>
+                    <span className="text-[11px] text-[#9BE564] font-semibold">Reported ✓</span>
                   ) : (
                     <button
-                      onClick={() => handleReportMistake(claim.id)}
+                      onClick={() => handleReportMistake(claim.id, claim.text)}
                       className="text-[12px] text-[#9AAAA0] hover:text-[#EAF1EC] transition-colors"
                     >
-                      Report
+                      Report a mistake
                     </button>
                   )}
                 </div>
@@ -447,15 +495,6 @@ export default function RootCardPage() {
             </div>
           ))}
         </div>
-
-        {/* Lenses touched disclaimer */}
-        <p className="text-[12px] text-[#9AAAA0] mt-3 leading-relaxed px-1">
-          Lenses touched:{" "}
-          <strong className="text-[#EAF1EC]">
-            {card.lenses.map((l) => LENSES[l]?.label).join(", ")}
-          </strong>
-          . Other lenses are left out because nothing here genuinely supports them.
-        </p>
       </div>
 
       {/* Connected Concepts */}
@@ -485,7 +524,7 @@ export default function RootCardPage() {
       {/* Sticky Bottom Actions */}
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[440px] p-4 bg-[#0E1411]/90 backdrop-blur-md border-t border-[#2A372F] flex items-center gap-3 z-30">
         <button
-          onClick={handleShare}
+          onClick={() => setShowShareModal(true)}
           className="flex-1 h-14 bg-[#151D18] hover:bg-[#1D2822] text-[#EAF1EC] font-bold text-[15px] rounded-btn border border-[#2A372F] flex items-center justify-center gap-2 transition-all"
         >
           <Share2 className="w-5 h-5 text-[#9AAAA0]" />
@@ -502,17 +541,17 @@ export default function RootCardPage() {
           }}
           className="flex-[1.4] h-14 bg-[#FFC857] hover:bg-[#E5B040] text-[#0E1411] font-bold text-[15px] rounded-btn flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,200,87,0.25)] transition-all"
         >
-          <span>Add to my Tree</span>
+          <span>{isSaved ? "Saved in Tree ✓" : "Add to my Tree"}</span>
         </button>
       </div>
 
-      {/* Sources Modal */}
+      {/* Verified Sources Modal */}
       {selectedClaimSources && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-md bg-[#151D18] border border-[#2A372F] rounded-sheet p-6 animate-slideUp">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[17px] font-bold text-[#EAF1EC]">
-                Sources & References
+                Retrieved Evidence
               </h3>
               <button
                 onClick={() => setSelectedClaimSources(null)}
@@ -523,7 +562,7 @@ export default function RootCardPage() {
             </div>
 
             <p className="text-[13px] text-[#9AAAA0] mb-4">
-              Verified claim: "{selectedClaimSources.text}"
+              Claim statement: "{selectedClaimSources.text}"
             </p>
 
             <div className="flex flex-col gap-2.5 mb-6">
@@ -552,13 +591,13 @@ export default function RootCardPage() {
               onClick={() => setSelectedClaimSources(null)}
               className="w-full h-12 bg-[#1D2822] hover:bg-[#2A372F] text-[#EAF1EC] font-bold text-[14px] rounded-btn transition-colors"
             >
-              Close
+              Done
             </button>
           </div>
         </div>
       )}
 
-      {/* Share Card Modal (matching 9 Share card mockup) */}
+      {/* Share Snapshot Modal */}
       {showShareModal && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-[#0E1411] border border-[#2A372F] rounded-[24px] p-6 shadow-2xl relative flex flex-col justify-between">
@@ -569,7 +608,7 @@ export default function RootCardPage() {
               <X className="w-4 h-4" />
             </button>
 
-            {/* Share Card Preview Box */}
+            {/* Share Card Snapshot */}
             <div className="bg-[#151D18] border border-[#2A372F] rounded-[20px] p-5 my-3 shadow-inner">
               <div className="flex items-center justify-between mb-4">
                 <span className="text-[14px] font-bold text-[#EAF1EC] flex items-center gap-1.5">
@@ -577,7 +616,7 @@ export default function RootCardPage() {
                   Deep Roots
                 </span>
                 <span className="text-[11px] text-[#9AAAA0] font-semibold uppercase">
-                  Root card
+                  Discovery Card
                 </span>
               </div>
 
@@ -621,26 +660,46 @@ export default function RootCardPage() {
               </div>
             </div>
 
+            {/* Privacy Disclaimer */}
+            <p className="text-[11px] text-[#9AAAA0] text-center mb-3">
+              Public snapshot only. Private photos, scan metadata, and notes are never shared.
+            </p>
+
             {/* Action buttons */}
-            <div className="flex flex-col gap-2.5 mt-2">
+            <div className="flex flex-col gap-2.5">
               <button
-                onClick={handleCopyLink}
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    navigator.clipboard.writeText(
+                      `${window.location.origin}/root/${root.id}`
+                    );
+                    setCopiedLink(true);
+                    setTimeout(() => setCopiedLink(false), 2000);
+                  }
+                }}
                 className="w-full h-12 bg-[#FFC857] text-[#0E1411] font-bold rounded-btn text-[14px] flex items-center justify-center gap-2 transition-all"
               >
                 {copiedLink ? <Check className="w-4 h-4 stroke-[3]" /> : <Share2 className="w-4 h-4" />}
-                <span>{copiedLink ? "Link Copied!" : "Copy Share Link"}</span>
+                <span>{copiedLink ? "Snapshot Link Copied!" : "Copy Public Link"}</span>
               </button>
 
               <button
                 onClick={() => setShowShareModal(false)}
                 className="w-full h-11 bg-[#151D18] text-[#9AAAA0] hover:text-[#EAF1EC] font-medium rounded-btn text-[13px]"
               >
-                Done
+                Close
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Pro Paywall Modal */}
+      <PaywallModal
+        isOpen={showPaywallModal}
+        onClose={() => setShowPaywallModal(false)}
+        featureNotice="Pro unlocks rabbit hole depth 5"
+      />
     </div>
   );
 }

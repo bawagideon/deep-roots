@@ -7,8 +7,19 @@ import { Home, GitFork, ScanLine } from "lucide-react";
 export function BottomTabBar() {
   const pathname = usePathname();
 
-  // Hide tab bar on scan viewfinder screen or welcome screen
-  if (pathname === "/scan" || pathname === "/welcome" || pathname.startsWith("/scan/")) {
+  // Hide tab bar on scan viewfinder screen, welcome screen, settings, preferences, upgrade, or legal screens
+  if (
+    pathname === "/scan" ||
+    pathname === "/welcome" ||
+    pathname === "/upgrade" ||
+    pathname === "/settings" ||
+    pathname === "/preferences" ||
+    pathname === "/admin" ||
+    pathname === "/terms" ||
+    pathname === "/privacy" ||
+    pathname === "/ai-disclosure" ||
+    pathname.startsWith("/scan/")
+  ) {
     return null;
   }
 

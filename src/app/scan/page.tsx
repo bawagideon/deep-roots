@@ -4,6 +4,8 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { X, Image as ImageIcon, Link as LinkIcon, Sparkles, AlertCircle } from "lucide-react";
 import { getUserStats } from "@/lib/storage/store";
+import { DailyLimitSheet } from "@/components/paywall/DailyLimitSheet";
+import { PaywallModal } from "@/components/paywall/PaywallModal";
 
 export default function ScanPage() {
   const router = useRouter();
@@ -13,6 +15,8 @@ export default function ScanPage() {
   const [urlInput, setUrlInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showLimitSheet, setShowLimitSheet] = useState(false);
+  const [showPaywallModal, setShowPaywallModal] = useState(false);
 
   const stats = getUserStats();
   const scansRemaining = Math.max(0, stats.scansLimit - stats.scansToday);
@@ -70,6 +74,11 @@ export default function ScanPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (scansRemaining <= 0) {
+      setShowLimitSheet(true);
+      return;
+    }
+
     if (!file.type.startsWith("image/")) {
       setError("Please select a valid image file.");
       return;
@@ -102,6 +111,11 @@ export default function ScanPage() {
     e.preventDefault();
     if (!textInput.trim()) return;
 
+    if (scansRemaining <= 0) {
+      setShowLimitSheet(true);
+      return;
+    }
+
     const scanId = `scan-${Date.now()}`;
     sessionStorage.setItem(
       `deeproots_pending_${scanId}`,
@@ -117,6 +131,11 @@ export default function ScanPage() {
   const handleLinkSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!urlInput.trim()) return;
+
+    if (scansRemaining <= 0) {
+      setShowLimitSheet(true);
+      return;
+    }
 
     const scanId = `scan-${Date.now()}`;
     sessionStorage.setItem(
@@ -146,9 +165,19 @@ export default function ScanPage() {
             Scan
           </h1>
 
-          <div className="px-3 py-1 rounded-full bg-[#151D18] border border-[#2A372F] text-[12px] font-semibold text-[#9AAAA0]">
+          <button
+            type="button"
+            onClick={() => {
+              if (scansRemaining <= 0) setShowLimitSheet(true);
+            }}
+            className={`px-3 py-1 rounded-full border text-[12px] font-semibold transition-colors ${
+              scansRemaining <= 0
+                ? "bg-red-950/40 border-red-500/40 text-red-300 cursor-pointer"
+                : "bg-[#151D18] border-[#2A372F] text-[#9AAAA0]"
+            }`}
+          >
             {scansRemaining} of {stats.scansLimit} left
-          </div>
+          </button>
         </div>
 
         {/* Segmented Mode Control */}
@@ -349,6 +378,23 @@ export default function ScanPage() {
           </button>
         </div>
       )}
+
+      {/* Daily limit reached bottom sheet */}
+      <DailyLimitSheet
+        isOpen={showLimitSheet}
+        onClose={() => setShowLimitSheet(false)}
+        limitCount={stats.scansLimit}
+        onSeePro={() => {
+          setShowLimitSheet(false);
+          setShowPaywallModal(true);
+        }}
+      />
+
+      {/* Pro Paywall Modal */}
+      <PaywallModal
+        isOpen={showPaywallModal}
+        onClose={() => setShowPaywallModal(false)}
+      />
     </div>
   );
 }

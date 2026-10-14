@@ -52,14 +52,23 @@ export default function HomePage() {
           </h1>
         </div>
 
-        {/* Streak Pill */}
-        <Link
-          href="/me"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1D2822] border border-[#2A372F] hover:border-[#FFC857]/50 transition-all text-[#EAF1EC]"
-        >
-          <Flame className="w-4 h-4 text-[#FFC857] fill-[#FFC857]" />
-          <span className="text-[14px] font-bold">{stats.streak}</span>
-        </Link>
+        {/* Top Actions: Streak Pill & Profile Avatar */}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/me"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1D2822] border border-[#2A372F] hover:border-[#FFC857]/50 transition-all text-[#EAF1EC]"
+          >
+            <Flame className="w-4 h-4 text-[#FFC857] fill-[#FFC857]" />
+            <span className="text-[14px] font-bold">{stats.streak}</span>
+          </Link>
+
+          <Link
+            href="/profile"
+            className="w-9 h-9 rounded-full bg-[#151D18] border border-[#2A372F] hover:border-[#FFC857] flex items-center justify-center text-[14px] font-bold text-[#EAF1EC] transition-all"
+          >
+            {stats.profile?.displayName?.charAt(0) || "E"}
+          </Link>
+        </div>
       </div>
 
       {/* Root of the Day Card */}
