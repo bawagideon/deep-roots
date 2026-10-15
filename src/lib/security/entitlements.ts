@@ -1,10 +1,16 @@
 import { Entitlements } from "@/types/roots";
+import { supabaseAdmin, getServerSetting } from "@/lib/supabase/server";
 
-// In-memory subscription store for server-side evaluation (mirrors DB)
-const subscriptionStore = new Map<string, { plan: "free" | "pro"; expiresAt?: string }>();
+// Fallback in-memory cache for offline/test instances
+const localSubscriptionCache = new Map<string, { plan: "free" | "pro"; cachedAt: number }>();
 
-export function getEntitlements(userId?: string): Entitlements {
-  const isKillSwitchActive = process.env.NEXT_PUBLIC_SCAN_KILL_SWITCH === "true";
+/**
+ * Authoritatively calculates entitlements for a user on the server.
+ * Reads from Supabase `profiles` table and server-controlled operations settings.
+ */
+export async function getEntitlements(userId?: string): Promise<Entitlements> {
+  // 1. Check server-controlled kill switch
+  const isKillSwitchActive = await getServerSetting("scan_kill_switch", false);
 
   if (isKillSwitchActive) {
     return {
@@ -19,10 +25,34 @@ export function getEntitlements(userId?: string): Entitlements {
     };
   }
 
-  const sub = userId ? subscriptionStore.get(userId) : null;
-  const isPro = sub?.plan === "pro";
+  // 2. Determine Plan
+  let plan: "free" | "pro" = "free";
 
-  if (isPro) {
+  if (userId) {
+    // Check in-memory cache first (TTL 60 seconds)
+    const cached = localSubscriptionCache.get(userId);
+    if (cached && Date.now() - cached.cachedAt < 60000) {
+      plan = cached.plan;
+    } else {
+      try {
+        const { data: profile } = await supabaseAdmin
+          .from("profiles")
+          .select("plan")
+          .eq("id", userId)
+          .single();
+
+        if (profile?.plan === "pro") {
+          plan = "pro";
+        }
+        localSubscriptionCache.set(userId, { plan, cachedAt: Date.now() });
+      } catch (err) {
+        // Fallback to cached or free plan if database is unreachable
+      }
+    }
+  }
+
+  // 3. Pro Entitlements
+  if (plan === "pro") {
     return {
       plan: "pro",
       dailyScanLimit: 50, // Generous fair-use cap
@@ -35,7 +65,7 @@ export function getEntitlements(userId?: string): Entitlements {
     };
   }
 
-  // Free Tier defaults
+  // 4. Free Tier Defaults
   return {
     plan: "free",
     dailyScanLimit: 5,
@@ -48,6 +78,15 @@ export function getEntitlements(userId?: string): Entitlements {
   };
 }
 
-export function setSubscription(userId: string, plan: "free" | "pro"): void {
-  subscriptionStore.set(userId, { plan });
+export async function setSubscription(userId: string, plan: "free" | "pro"): Promise<boolean> {
+  localSubscriptionCache.set(userId, { plan, cachedAt: Date.now() });
+  try {
+    const { error } = await supabaseAdmin
+      .from("profiles")
+      .update({ plan, updated_at: new Date().toISOString() })
+      .eq("id", userId);
+    return !error;
+  } catch {
+    return false;
+  }
 }

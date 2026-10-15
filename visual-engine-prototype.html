@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Visual Discovery Engine: prototype</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&amp;family=Instrument+Sans:wght@400;500;600&amp;display=swap">
+<style>
+:root{--bg:#FAF8F4;--surface:#FFFFFF;--line:#DDD8CE;--text:#14201A;--muted:#55635B;--accent:#7A4E00;--accentbg:#FFF1CC;--ok:#1B6B3A;--bad:#A3321F;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0A0F0C;--surface:#151D18;--line:#2A372F;--text:#EAF1EC;--muted:#9AAAA0;--accent:#FFC857;--accentbg:#231A00;--ok:#9BE564;--bad:#FF8A7A}}
+:root[data-theme="dark"]{--bg:#0A0F0C;--surface:#151D18;--line:#2A372F;--text:#EAF1EC;--muted:#9AAAA0;--accent:#FFC857;--accentbg:#231A00;--ok:#9BE564;--bad:#FF8A7A}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'Instrument Sans',system-ui,sans-serif;line-height:1.5}
+.wrap{max-width:980px;margin:0 auto;padding:24px 16px 48px}
+h1{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:800;font-size:clamp(28px,5vw,40px);line-height:1.05;margin:0 0 8px;letter-spacing:-0.02em}
+.lead{color:var(--muted);margin:0 0 20px;max-width:62ch}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tabs button{height:44px;padding:0 16px;border-radius:22px;border:1px solid var(--line);background:var(--surface);color:var(--text);font:600 15px 'Instrument Sans',system-ui,sans-serif;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--accentbg);border:1.5px solid var(--accent);color:var(--accent)}
+.grid{display:grid;grid-template-columns:minmax(0,440px) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:760px){.grid{grid-template-columns:1fr}}
+#stage{width:100%;height:auto;aspect-ratio:1;background:#0E1411;border-radius:20px;display:block}
+.row{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:12px;font-size:14px}
+.row button{height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--text);font:600 14px 'Instrument Sans',system-ui,sans-serif;cursor:pointer}
+.row label{display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-bottom:12px}
+.chip{display:inline-block;border-radius:14px;padding:3px 12px;font-size:13px;font-weight:600;background:var(--accentbg);color:var(--accent);margin-bottom:12px}
+.chip.fb{background:transparent;border:1px solid var(--bad);color:var(--bad)}
+.use{color:var(--muted);font-size:14px;margin:0 0 12px}
+.dh{display:flex;align-items:center;gap:8px;font-size:16px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.muted{color:var(--muted)}
+#dig{height:44px;padding:0 16px;border-radius:12px;border:0;background:var(--accent);color:var(--bg);font:600 14px 'Instrument Sans',system-ui,sans-serif;cursor:pointer}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) #dig{color:#231A00}}
+#toast{font-size:13px;color:var(--muted);margin-top:8px;min-height:20px}
+ul.checks{list-style:none;margin:0;padding:0;font-size:14px}
+ul.checks li{padding:3px 0}
+.ok{color:var(--ok);font-weight:600}.no{color:var(--bad);font-weight:600}
+details{margin-bottom:12px}
+summary{cursor:pointer;font-weight:600;min-height:32px}
+pre{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;overflow-x:auto;font-size:12px;line-height:1.45;max-height:320px;margin:8px 0 0}
+.na{font-size:13px;color:var(--muted);margin-top:10px}
+
+/* stage animation */
+.lab{font:600 3.3px 'Instrument Sans',system-ui,sans-serif;paint-order:stroke;stroke:#0E1411;stroke-width:1px;stroke-linejoin:round}
+.part{cursor:pointer;opacity:0;animation:fadein .5s var(--d,0s) forwards;outline:none}
+.part:focus-visible .art{filter:brightness(1.4)}
+.hasSel .part:not(.sel) .art{opacity:.35}
+.float{animation:float 4s ease-in-out var(--d,0s) infinite}
+.draw{stroke-dasharray:1;stroke-dashoffset:1;animation:drawline .8s var(--d,0s) forwards}
+.pulse{transform-box:fill-box;transform-origin:center;animation:pulse 2.4s ease-in-out infinite}
+.burst{animation:fadein .5s var(--d,0s) forwards,burst 6s ease-in-out infinite}
+.sweep{animation:sweep 1.6s ease-in-out forwards}
+.ping{transform-box:fill-box;transform-origin:center;animation:ping 2s ease-out infinite}
+@keyframes fadein{to{opacity:1}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.2px)}}
+@keyframes drawline{to{stroke-dashoffset:0}}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+@keyframes burst{0%,22%{transform:translate(0,0)}45%,75%{transform:translate(var(--dx),var(--dy))}100%{transform:translate(0,0)}}
+@keyframes sweep{0%{transform:translateY(0);opacity:1}100%{transform:translateY(98px);opacity:0}}
+@keyframes ping{0%{transform:scale(1);opacity:.8}100%{transform:scale(2.4);opacity:0}}
+.calm .part,.calm .draw,.calm .float,.calm .pulse,.calm .burst,.calm .ping{animation:none}
+.calm .part{opacity:1}
+.calm .draw{stroke-dashoffset:0}
+.calm .sweep{display:none}
+.calm .ping{opacity:0}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1>Visual Discovery Engine</h1>
+  <p class="lead">One saved Roots Card in, four renderers out. The model only picks an archetype and returns a small spec. Every moving part is a component of the card, and the spec is checked before anything is drawn. Tap a part of the scene.</p>
+
+  <div class="tabs" role="tablist" aria-label="Archetype">
+    <button role="tab" data-tab="constellation" aria-selected="true">Constellation</button>
+    <button role="tab" data-tab="explode" aria-selected="false">Explode</button>
+    <button role="tab" data-tab="hotspots" aria-selected="false">Hotspots</button>
+    <button role="tab" data-tab="flow" aria-selected="false">Flow</button>
+  </div>
+
+  <div class="grid">
+    <section aria-label="Scene">
+      <svg id="stage" viewBox="0 0 100 100" role="img" aria-label=""></svg>
+      <div id="na" class="na"></div>
+      <div class="row">
+        <button id="replay" type="button">Replay</button>
+        <label><input type="checkbox" id="calm"> Reduce motion</label>
+        <label><input type="checkbox" id="bad"> Simulate a bad model output</label>
+      </div>
+    </section>
+
+    <section aria-label="Details">
+      <div id="status" class="chip"></div>
+      <p id="use" class="use"></p>
+      <div id="detail" class="card"></div>
+      <div class="card">
+        <strong>Integrity check before drawing</strong>
+        <ul id="checks" class="checks"></ul>
+      </div>
+      <details><summary>Spec the model returns</summary><pre id="spec"></pre></details>
+      <details><summary>Saved Roots Card (engine input)</summary><pre id="card"></pre></details>
+    </section>
+  </div>
+</main>
+
+<script>
+(function(){
+var LENS={language:'#7FB8FF',culture:'#FF9B7A',mind:'#D4A5FF',money:'#9BE564',tech:'#5FE0E8',origins:'#FF86B8'};
+var LENSNAME={language:'Language',culture:'Culture',mind:'Mind & Body',money:'Money',tech:'Tech',origins:'Origins'};
+var MAT={grain:'#E9C46A',tomato:'#D9552B',leaf:'#7BC47F',cream:'#F4EBD0',oil:'#E0A82E',glass:'#6B8E9B',ink:'#0E1411',muted:'#9AAAA0',text:'#EAF1EC',amber:'#FFC857'};
+function tok(t){return LENS[t]||MAT[t]||'#ffffff';}
+function valid(t){return !!(LENS[t]||MAT[t]);}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+var CARD={title:'Instant noodles',
+  root:{headline:'Instant noodles were invented to fight hunger.'},
+  components:[
+    {name:'Noodle block',lens:'tech',fact:'Frying drives out water, so the block keeps for months.'},
+    {name:'Seasoning sachet',lens:'language',fact:'"Umami" was coined in Japan in 1908 to name the savoury taste.'},
+    {name:'Frying oil',lens:'origins',fact:'The oil palm comes from West Africa.'},
+    {name:'Wheat',lens:'money',fact:'Wheat grows poorly in hot, humid places, so many tropical countries import it.'}
+  ]};
+
+var SPECS={
+ constellation:{version:1,archetype:'constellation',subject:'Instant noodles',
+  alt:'Four parts of instant noodles gathered around the central Root: noodle block, seasoning sachet, frying oil and wheat.',
+  parts:[
+   {id:'p0',componentIndex:0,label:'Noodle block',lens:'tech',order:0},
+   {id:'p1',componentIndex:1,label:'Seasoning sachet',lens:'language',order:1},
+   {id:'p2',componentIndex:2,label:'Frying oil',lens:'origins',order:2},
+   {id:'p3',componentIndex:3,label:'Wheat',lens:'money',order:3}],
+  links:[{from:'root',to:'p0',kind:'contains'},{from:'root',to:'p1',kind:'contains'},{from:'root',to:'p2',kind:'contains'},{from:'root',to:'p3',kind:'contains'}],
+  motion:{preset:'float',intensity:1},status:'ready'},
+
+ explode:{version:1,archetype:'explode',subject:'Instant noodles',
+  alt:'Exploded view of instant noodles: a noodle block, a seasoning sachet, a drop of frying oil and a wheat stalk separate and come back together.',
+  parts:[
+   {id:'p0',componentIndex:0,label:'Noodle block',lens:'tech',order:0,labelAt:[43,31],explodeVector:[-2,2],
+    art:[{t:'rect',x:24,y:36,w:38,h:26,r:7,fill:'grain'},{t:'path',d:'M28 44 q3 -3 6 0 t6 0 t6 0 t6 0 t6 0',stroke:'cream',sw:1.4},{t:'path',d:'M28 50 q3 -3 6 0 t6 0 t6 0 t6 0 t6 0',stroke:'cream',sw:1.4},{t:'path',d:'M28 56 q3 -3 6 0 t6 0 t6 0 t6 0 t6 0',stroke:'cream',sw:1.4}]},
+   {id:'p1',componentIndex:1,label:'Seasoning sachet',lens:'language',order:1,labelAt:[82,47],explodeVector:[6,-4],
+    art:[{t:'rect',x:74,y:16,w:16,h:24,r:2,fill:'tomato'},{t:'poly',points:[[74,16],[77,12],[80,16],[83,12],[86,16],[89,12],[90,16]],fill:'tomato'},{t:'circle',cx:82,cy:28,r:4,fill:'cream'}]},
+   {id:'p2',componentIndex:2,label:'Frying oil',lens:'origins',order:2,labelAt:[14,45],explodeVector:[-6,-4],
+    art:[{t:'path',d:'M16 12 C16 12 7 23 7 29 A9 9 0 0 0 25 29 C25 23 16 12 16 12 Z',fill:'oil'}]},
+   {id:'p3',componentIndex:3,label:'Wheat',lens:'money',order:3,labelAt:[43,95],explodeVector:[0,2],
+    art:[{t:'line',x1:43,y1:88,x2:43,y2:68,stroke:'leaf',sw:1.6},{t:'ellipse',cx:43,cy:65,rx:1.8,ry:3.2,fill:'grain'},{t:'ellipse',cx:39.5,cy:71,rx:1.8,ry:3.2,fill:'grain'},{t:'ellipse',cx:46.5,cy:71,rx:1.8,ry:3.2,fill:'grain'},{t:'ellipse',cx:39.5,cy:77,rx:1.8,ry:3.2,fill:'grain'},{t:'ellipse',cx:46.5,cy:77,rx:1.8,ry:3.2,fill:'grain'}]}],
+  links:[{from:'p2',to:'p0',kind:'flows'},{from:'p3',to:'p0',kind:'becomes'}],
+  motion:{preset:'explode',intensity:2},status:'ready'},
+
+ hotspots:{version:1,archetype:'hotspots',subject:'Instant noodles',
+  alt:'A photo of a noodle pack, a sachet and a bottle of oil, with pins marking the parts found in the picture.',
+  parts:[
+   {id:'p0',componentIndex:0,label:'Noodle block',lens:'tech',order:0,box:{x:0.28,y:0.32,w:0.44,h:0.44}},
+   {id:'p1',componentIndex:1,label:'Seasoning sachet',lens:'language',order:1,box:{x:0.74,y:0.54,w:0.16,h:0.22}},
+   {id:'p2',componentIndex:2,label:'Frying oil',lens:'origins',order:2,box:{x:0.08,y:0.34,w:0.18,h:0.42}},
+   {id:'p3',componentIndex:3,label:'Wheat',lens:'money',order:3}],
+  links:[],motion:{preset:'sweep',intensity:2},status:'ready'},
+
+ flow:{version:1,archetype:'flow',subject:'Instant noodles',
+  alt:'A flow diagram: wheat and frying oil feed the noodle block, which joins the seasoning sachet to make instant noodles.',
+  parts:[
+   {id:'p0',componentIndex:0,label:'Noodle block',lens:'tech',order:2,pos:[48,48]},
+   {id:'p1',componentIndex:1,label:'Seasoning sachet',lens:'language',order:3,pos:[48,84]},
+   {id:'p2',componentIndex:2,label:'Frying oil',lens:'origins',order:1,pos:[14,70]},
+   {id:'p3',componentIndex:3,label:'Wheat',lens:'money',order:0,pos:[14,26]}],
+  rootNode:{label:'Instant noodles',pos:[84,56]},
+  links:[{from:'p3',to:'p0',kind:'becomes'},{from:'p2',to:'p0',kind:'flows'},{from:'p0',to:'root',kind:'becomes'},{from:'p1',to:'root',kind:'flows'}],
+  motion:{preset:'pathflow',intensity:2},status:'ready'}
+};
+
+var INFO={
+ constellation:'Universal fallback. Needs only the card, so it is drawn instantly on the device with no extra AI call.',
+ explode:'For physical things with parts. The model composes each part from a small shape vocabulary, or the app uses a hand-made kit.',
+ hotspots:'For the user\u2019s own photo. A vision model returns a box per component; parts not visible in the picture are listed separately.',
+ flow:'For processes and supply chains. Stages come from the card\u2019s components; dots travel the links.'
+};
+
+var PHOTO='<rect x="0" y="0" width="100" height="100" fill="#1D2822"/><rect x="0" y="78" width="100" height="22" fill="#151D18"/>'+
+ '<g transform="rotate(-5 50 54)"><rect x="28" y="32" width="44" height="44" rx="6" fill="#D9552B"/><rect x="33" y="46" width="34" height="16" rx="3" fill="#E9C46A"/><path d="M37 54 q3 -4 6 0 t6 0 t6 0 t6 0" stroke="#7A2A12" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>'+
+ '<rect x="76" y="56" width="12" height="18" rx="1.5" fill="#F4EBD0"/><circle cx="82" cy="65" r="3" fill="#D9552B"/>'+
+ '<rect x="10" y="44" width="12" height="30" rx="3" fill="#E0A82E"/><rect x="13.5" y="36" width="5" height="9" fill="#E0A82E"/><rect x="12.5" y="33" width="7" height="4" rx="1" fill="#D9552B"/>';
+
+var state={tab:'constellation',calm:false,bad:false,sel:null,used:null};
+var stage=document.getElementById('stage');
+
+function prim(p){
+  var fill=p.fill?'fill="'+tok(p.fill)+'"':'fill="none"';
+  var st=p.stroke?'stroke="'+tok(p.stroke)+'" stroke-width="'+(p.sw||1)+'" stroke-linecap="round" stroke-linejoin="round"':'';
+  if(p.t==='rect')return '<rect x="'+p.x+'" y="'+p.y+'" width="'+p.w+'" height="'+p.h+'" rx="'+(p.r||0)+'" '+fill+'/>';
+  if(p.t==='circle')return '<circle cx="'+p.cx+'" cy="'+p.cy+'" r="'+p.r+'" '+fill+'/>';
+  if(p.t==='ellipse')return '<ellipse cx="'+p.cx+'" cy="'+p.cy+'" rx="'+p.rx+'" ry="'+p.ry+'" '+fill+'/>';
+  if(p.t==='line')return '<line x1="'+p.x1+'" y1="'+p.y1+'" x2="'+p.x2+'" y2="'+p.y2+'" '+st+'/>';
+  if(p.t==='poly')return '<polygon points="'+p.points.map(function(q){return q.join(',');}).join(' ')+'" '+fill+'/>';
+  if(p.t==='path')return '<path d="'+p.d+'" '+fill+' '+st+'/>';
+  return '';
+}
+function lab(x,y,t,c){return '<text class="lab" x="'+x+'" y="'+y+'" text-anchor="middle" fill="'+c+'">'+esc(t)+'</text>';}
+
+function check(spec){
+  var items=[],i,p;
+  var okComp=spec.parts.every(function(p){return CARD.components[p.componentIndex]!==undefined;});
+  items.push({ok:okComp,msg:'Every part points at a real component'});
+  items.push({ok:spec.parts.every(function(p){return p.label.split(/\s+/).length<=3;}),msg:'Labels are 3 words or fewer'});
+  var prims=[];spec.parts.forEach(function(p){(p.art||[]).forEach(function(a){prims.push(a);});});
+  var toks=[];spec.parts.forEach(function(p){toks.push(p.lens);});
+  prims.forEach(function(a){if(a.fill)toks.push(a.fill);if(a.stroke)toks.push(a.stroke);});
+  items.push({ok:toks.every(valid),msg:'Only palette tokens are used (no raw colours)'});
+  items.push({ok:prims.every(function(a){return a.t!=='path'||/^[MLCQTAZmlcqtaz0-9\s.,\-]+$/.test(a.d);}),msg:'Path data has only allowed commands and numbers'});
+  items.push({ok:prims.length<=60,msg:'At most 60 primitives ('+prims.length+' used)'});
+  items.push({ok:spec.parts.every(function(p){return !p.box||(p.box.x>=0&&p.box.y>=0&&p.box.x+p.box.w<=1&&p.box.y+p.box.h<=1);}),msg:'Photo boxes sit inside the frame'});
+  items.push({ok:!!spec.alt,msg:'Alt text is present'});
+  return {ok:items.every(function(i){return i.ok;}),items:items};
+}
+function tamper(spec){
+  var s=JSON.parse(JSON.stringify(spec));
+  s.parts[1].componentIndex=9;
+  if(s.parts[0].art)s.parts[0].art.push({t:'path',d:'M0 0 L9 9 <script>',stroke:'text'});
+  if(s.parts[0].box)s.parts[0].box.x=1.4;
+  return s;
+}
+
+function rConstellation(spec){
+  var h='',n=spec.parts.length;
+  spec.parts.forEach(function(p,i){var a=(-90+i*360/n)*Math.PI/180;p._x=50+32*Math.cos(a);p._y=50+32*Math.sin(a);});
+  spec.parts.forEach(function(p){h+='<line class="draw" pathLength="1" style="--d:'+(0.3+p.order*0.25)+'s" x1="50" y1="50" x2="'+p._x+'" y2="'+p._y+'" stroke="'+tok(p.lens)+'" stroke-opacity=".55" stroke-width=".6"/>';});
+  h+='<g class="part" data-id="root" tabindex="0" role="button" aria-label="The Root" style="--d:.1s"><g class="art"><g class="pulse"><circle cx="50" cy="50" r="9.5" fill="#231A00" stroke="#FFC857" stroke-width="1"/></g><text class="lab" x="50" y="51.2" text-anchor="middle" fill="#FFC857">ROOT</text></g></g>';
+  spec.parts.forEach(function(p){h+='<g class="part" data-id="'+p.id+'" tabindex="0" role="button" aria-label="'+esc(p.label)+'" style="--d:'+(0.4+p.order*0.25)+'s"><circle cx="'+p._x+'" cy="'+p._y+'" r="11" fill="transparent"/><g class="art"><g class="float" style="--d:'+(p.order*0.4)+'s"><circle cx="'+p._x+'" cy="'+p._y+'" r="6.5" fill="#151D18" stroke="'+tok(p.lens)+'" stroke-width="1.3"/><circle cx="'+p._x+'" cy="'+p._y+'" r="2" fill="'+tok(p.lens)+'"/>'+lab(p._x,p._y+11.5,p.label,'#EAF1EC')+'</g></g></g>';});
+  return h;
+}
+function rExplode(spec){
+  var h='';
+  spec.parts.forEach(function(p){h+='<g class="part burst" data-id="'+p.id+'" tabindex="0" role="button" aria-label="'+esc(p.label)+'" style="--d:'+(0.3+p.order*0.25)+'s;--dx:'+p.explodeVector[0]+'px;--dy:'+p.explodeVector[1]+'px"><g class="art">'+p.art.map(prim).join('')+lab(p.labelAt[0],p.labelAt[1],p.label,tok(p.lens))+'</g></g>';});
+  return h;
+}
+function rHotspots(spec){
+  var h=PHOTO,miss=[];
+  spec.parts.forEach(function(p){
+    if(!p.box){miss.push(p.label);return;}
+    var bx=p.box.x*100,by=p.box.y*100,bw=p.box.w*100,bh=p.box.h*100,d=1.9+p.order*0.3,c=tok(p.lens);
+    h+='<g class="part" data-id="'+p.id+'" tabindex="0" role="button" aria-label="'+esc(p.label)+'" style="--d:'+d+'s"><rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="transparent"/><g class="art"><rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" rx="1.5" fill="none" stroke="'+c+'" stroke-width=".7" stroke-dasharray="2 1.5"/><circle class="ping" cx="'+(bx+bw/2)+'" cy="'+by+'" r="2.2" fill="none" stroke="'+c+'" stroke-width=".6"/><circle cx="'+(bx+bw/2)+'" cy="'+by+'" r="2.2" fill="'+c+'"/>'+lab(bx+bw/2,by-3,p.label,c)+'</g></g>';
+  });
+  h+='<rect class="sweep" x="0" y="0" width="100" height="1.2" fill="#FFC857"/>';
+  document.getElementById('na').textContent=miss.length?'Not visible in the photo: '+miss.join(', ')+'. Shown in the card, not pinned.':'';
+  return h;
+}
+function rFlow(spec){
+  var h='',pos={},col={},i;
+  spec.parts.forEach(function(p){pos[p.id]=p.pos;col[p.id]=tok(p.lens);});
+  pos.root=spec.rootNode.pos;col.root='#FFC857';
+  function path(a,b){var x1=pos[a][0],y1=pos[a][1],x2=pos[b][0],y2=pos[b][1],mx=(x1+x2)/2;return 'M'+x1+' '+y1+' C'+mx+' '+y1+' '+mx+' '+y2+' '+x2+' '+y2;}
+  spec.links.forEach(function(l,k){
+    var d=path(l.from,l.to);
+    h+='<path d="'+d+'" fill="none" stroke="'+col[l.from]+'" stroke-opacity=".35" stroke-width=".8"/>';
+    for(i=0;i<2;i++)h+='<circle r="1.3" fill="'+col[l.from]+'"><animateMotion dur="3s" begin="'+(i*1.5+k*0.2)+'s" repeatCount="indefinite" path="'+d+'"/></circle>';
+  });
+  spec.parts.forEach(function(p){var x=p.pos[0],y=p.pos[1];h+='<g class="part" data-id="'+p.id+'" tabindex="0" role="button" aria-label="'+esc(p.label)+'" style="--d:'+(0.2+p.order*0.25)+'s"><circle cx="'+x+'" cy="'+y+'" r="10" fill="transparent"/><g class="art"><circle cx="'+x+'" cy="'+y+'" r="5.5" fill="#151D18" stroke="'+tok(p.lens)+'" stroke-width="1.3"/><circle cx="'+x+'" cy="'+y+'" r="1.8" fill="'+tok(p.lens)+'"/>'+lab(x,y+10,p.label,'#EAF1EC')+'</g></g>';});
+  var rx=spec.rootNode.pos[0],ry=spec.rootNode.pos[1];
+  h+='<g class="part" data-id="root" tabindex="0" role="button" aria-label="The Root" style="--d:1.2s"><circle cx="'+rx+'" cy="'+ry+'" r="11" fill="transparent"/><g class="art"><g class="pulse"><circle cx="'+rx+'" cy="'+ry+'" r="6.5" fill="#231A00" stroke="#FFC857" stroke-width="1.2"/></g>'+lab(rx,ry+11,spec.rootNode.label,'#FFC857')+'</g></g>';
+  return h;
+}
+
+function select(id){
+  state.sel=id;
+  var els=stage.querySelectorAll('.part');
+  for(var i=0;i<els.length;i++)els[i].classList.toggle('sel',els[i].getAttribute('data-id')===id);
+  stage.classList.toggle('hasSel',!!id);
+  var d=document.getElementById('detail');
+  if(id==='root'){
+    d.innerHTML='<div class="dh"><span class="dot" style="background:#FFC857"></span><strong>The Root</strong></div><p>'+esc(CARD.root.headline)+'</p><button id="dig" type="button">Open the full card</button><div id="toast"></div>';
+  }else{
+    var p=state.used.parts.filter(function(x){return x.id===id;})[0],c=CARD.components[p.componentIndex];
+    d.innerHTML='<div class="dh"><span class="dot" style="background:'+tok(c.lens)+'"></span><strong>'+esc(c.name)+'</strong><span class="muted"> \u00b7 '+LENSNAME[c.lens]+'</span></div><p>'+esc(c.fact)+'</p><button id="dig" type="button">Dig deeper from this part</button><div id="toast"></div>';
+    document.getElementById('dig').onclick=function(){document.getElementById('toast').textContent='In the app this opens a rabbit hole for \u201c'+c.name+'\u201d.';};
+    return;
+  }
+  document.getElementById('dig').onclick=function(){document.getElementById('toast').textContent='In the app this scrolls to the full Roots Card.';};
+}
+
+function render(){
+  var spec=SPECS[state.tab],test=(state.bad&&spec.archetype!=='constellation')?tamper(spec):spec;
+  var res=check(test),used=test,fb=false;
+  if(!res.ok){used=SPECS.constellation;fb=true;}
+  state.used=used;state.sel=null;
+  document.getElementById('na').textContent='';
+  var html;
+  if(used.archetype==='constellation')html=rConstellation(used);
+  else if(used.archetype==='explode')html=rExplode(used);
+  else if(used.archetype==='hotspots')html=rHotspots(used);
+  else html=rFlow(used);
+  stage.setAttribute('aria-label',used.alt);
+  stage.classList.remove('hasSel');
+  stage.innerHTML=html;
+  stage.classList.toggle('calm',state.calm);
+  if(stage.pauseAnimations){if(state.calm)stage.pauseAnimations();else stage.unpauseAnimations();}
+  var st=document.getElementById('status');
+  st.className='chip'+(fb?' fb':'');
+  st.textContent=fb?'Spec rejected, showing fallback constellation':'Rendering: '+used.archetype;
+  document.getElementById('use').textContent=INFO[state.tab];
+  var ul=document.getElementById('checks');ul.innerHTML='';
+  res.items.forEach(function(it){var li=document.createElement('li');li.innerHTML='<span class="'+(it.ok?'ok':'no')+'">'+(it.ok?'Pass':'Fail')+'</span> '+esc(it.msg);ul.appendChild(li);});
+  document.getElementById('spec').textContent=JSON.stringify(test,function(k,v){return k[0]==='_'?undefined:v;},1);
+  document.getElementById('detail').innerHTML='<span class="muted">Tap a part of the scene to read its hidden fact.</span>';
+  var els=stage.querySelectorAll('.part');
+  for(var i=0;i<els.length;i++){(function(el){
+    el.addEventListener('click',function(){select(el.getAttribute('data-id'));});
+    el.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();select(el.getAttribute('data-id'));}});
+  })(els[i]);}
+}
+
+var tabs=document.querySelectorAll('.tabs button');
+for(var i=0;i<tabs.length;i++){tabs[i].addEventListener('click',function(){
+  state.tab=this.getAttribute('data-tab');
+  for(var j=0;j<tabs.length;j++)tabs[j].setAttribute('aria-selected',tabs[j]===this?'true':'false');
+  render();
+});}
+document.getElementById('replay').addEventListener('click',render);
+document.getElementById('calm').addEventListener('change',function(){state.calm=this.checked;render();});
+document.getElementById('bad').addEventListener('change',function(){state.bad=this.checked;render();});
+document.getElementById('card').textContent=JSON.stringify(CARD,null,1);
+var mq=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)');
+if(mq&&mq.matches){state.calm=true;document.getElementById('calm').checked=true;}
+render();
+})();
+</script>
+</body>
+</html>

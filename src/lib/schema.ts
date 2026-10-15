@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Lens } from "@/types/roots";
+import { Lens, RootsCard } from "@/types/roots";
 
 export const LensEnum = z.enum([
   "language",
@@ -16,16 +16,25 @@ export const ClaimStatusEnum = z.enum([
   "open_question",
 ]);
 
+export const EvidenceStatusEnum = z.enum([
+  "supported",
+  "contradicted",
+  "insufficient",
+  "unverified",
+]);
+
 export const ClaimSourceSchema = z.object({
   title: z.string().min(2).max(200),
   url: z.string().url(),
   retrievedAt: z.string(),
+  excerpt: z.string().optional(),
 });
 
 export const ClaimSchema = z.object({
   id: z.string(),
   text: z.string().min(5).max(200, "Claim text must be checkable and concise"),
   status: ClaimStatusEnum,
+  evidenceStatus: EvidenceStatusEnum.optional(),
   sources: z.array(ClaimSourceSchema).default([]),
 });
 
@@ -81,7 +90,7 @@ export type ValidatedRootsCard = z.infer<typeof RootsCardSchema>;
 /**
  * Validates cross-reference integrity between claims and components/layers/root.
  */
-export function validateRootsCardIntegrity(card: ValidatedRootsCard): {
+export function validateRootsCardIntegrity(card: RootsCard | ValidatedRootsCard): {
   isValid: boolean;
   errors: string[];
 } {

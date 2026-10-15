@@ -20,6 +20,9 @@ import { StoredRoot, RootsCard, Claim, Lens } from "@/types/roots";
 import { getStoredRoots, saveRoot, deleteRoot, getUserStats } from "@/lib/storage/store";
 import { LENSES } from "@/lib/constants";
 import { PaywallModal } from "@/components/paywall/PaywallModal";
+import { VisualStage } from "@/components/visual/VisualStage";
+import { buildConstellationSpec, getCardVisualSpec } from "@/lib/visual/generator";
+import { VisualSpec } from "@/types/visual";
 import confetti from "canvas-confetti";
 
 export default function RootCardPage() {
@@ -41,6 +44,7 @@ export default function RootCardPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [reportedClaims, setReportedClaims] = useState<Record<string, boolean>>({});
   const [showPaywallModal, setShowPaywallModal] = useState(false);
+  const [visualSpec, setVisualSpec] = useState<VisualSpec | null>(null);
 
   useEffect(() => {
     const all = getStoredRoots();
@@ -91,8 +95,20 @@ export default function RootCardPage() {
   }
 
   const card = activeRabbitHole ? activeRabbitHole.card : root.card;
+  const currentVisualSpec = visualSpec || buildConstellationSpec(card);
+
+  useEffect(() => {
+    if (root) {
+      const c = activeRabbitHole ? activeRabbitHole.card : root.card;
+      setVisualSpec(buildConstellationSpec(c));
+      getCardVisualSpec(c)
+        .then((s) => setVisualSpec(s))
+        .catch(() => {});
+    }
+  }, [root, activeRabbitHole]);
+
   const verifiedSourcesCount = card.claims.filter(
-    (c) => c.sources && c.sources.length > 0
+    (c) => c.sources && c.sources.length > 0 && c.evidenceStatus === "supported"
   ).length;
   const establishedCount = card.claims.filter((c) => c.status === "established").length;
   const interpretationCount = card.claims.filter((c) => c.status === "interpretation").length;
@@ -261,22 +277,15 @@ export default function RootCardPage() {
         </div>
       )}
 
-      {/* Header Graphic */}
-      <div className="w-full h-40 rounded-card bg-[#151D18] border border-[#2A372F] flex items-center justify-center overflow-hidden mb-5 relative">
-        <div className="text-center p-6">
-          <div className="w-13 h-13 rounded-2xl bg-[#231A00] border border-[#FFC857]/40 mx-auto flex items-center justify-center text-3xl mb-1.5 shadow-inner">
-            {card.lenses.includes("origins")
-              ? "⏳"
-              : card.lenses.includes("tech")
-              ? "⚡"
-              : card.lenses.includes("money")
-              ? "📈"
-              : "🌱"}
-          </div>
-          <span className="text-[12px] font-semibold text-[#9AAAA0] tracking-wider uppercase">
-            {card.inputSummary}
-          </span>
-        </div>
+      {/* Visual Discovery Engine */}
+      <div className="mb-5">
+        <VisualStage
+          spec={currentVisualSpec}
+          card={card}
+          onDigDeeper={(componentName) =>
+            handleDeepen({ kind: "component", componentName })
+          }
+        />
       </div>
 
       {/* Title & One-Liner */}
@@ -453,13 +462,21 @@ export default function RootCardPage() {
 
               <div className="flex items-center justify-between">
                 {/* Status Badges */}
-                {claim.sources && claim.sources.length > 0 ? (
+                {claim.evidenceStatus === "supported" ? (
                   <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#9BE564]/15 text-[#9BE564] border border-[#9BE564]/30">
-                    Established (Sourced)
+                    Established · Supported by source
+                  </span>
+                ) : claim.evidenceStatus === "contradicted" ? (
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-950/40 text-red-400 border border-red-500/30">
+                    Contradicted by source
+                  </span>
+                ) : claim.evidenceStatus === "insufficient" ? (
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#FF9B7A]/15 text-[#FF9B7A] border border-[#FF9B7A]/30">
+                    Interpretation · Insufficient evidence
                   </span>
                 ) : claim.status === "established" ? (
                   <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#5FE0E8]/15 text-[#5FE0E8] border border-[#5FE0E8]/30">
-                    Established (Pending Sources)
+                    Established · Unverified
                   </span>
                 ) : claim.status === "interpretation" ? (
                   <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#FF9B7A]/15 text-[#FF9B7A] border border-[#FF9B7A]/30">
@@ -548,7 +565,7 @@ export default function RootCardPage() {
       {/* Verified Sources Modal */}
       {selectedClaimSources && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#151D18] border border-[#2A372F] rounded-sheet p-6 animate-slideUp">
+          <div className="w-full max-w-md bg-[#151D18] border border-[#2A372F] rounded-sheet p-6 animate-slideUp max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[17px] font-bold text-[#EAF1EC]">
                 Retrieved Evidence
@@ -561,35 +578,67 @@ export default function RootCardPage() {
               </button>
             </div>
 
-            <p className="text-[13px] text-[#9AAAA0] mb-4">
-              Claim statement: "{selectedClaimSources.text}"
-            </p>
+            <div className="mb-4">
+              <p className="text-[13px] text-[#9AAAA0] mb-2 leading-relaxed">
+                Claim statement: <span className="text-[#EAF1EC] italic">"{selectedClaimSources.text}"</span>
+              </p>
+              {selectedClaimSources.evidenceStatus && (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#1D2822] border border-[#2A372F]">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      selectedClaimSources.evidenceStatus === "supported"
+                        ? "bg-[#9BE564]"
+                        : selectedClaimSources.evidenceStatus === "contradicted"
+                        ? "bg-red-400"
+                        : "bg-[#FFC857]"
+                    }`}
+                  />
+                  <span className="text-[#EAF1EC] capitalize">
+                    {selectedClaimSources.evidenceStatus} by external text
+                  </span>
+                </div>
+              )}
+            </div>
 
-            <div className="flex flex-col gap-2.5 mb-6">
-              {selectedClaimSources.sources.map((src, i) => (
-                <a
+            <div className="flex flex-col gap-3 mb-6 overflow-y-auto pr-1">
+              {selectedClaimSources.sources?.map((src, i) => (
+                <div
                   key={i}
-                  href={src.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-3.5 bg-[#1D2822] border border-[#2A372F] hover:border-[#FFC857]/50 rounded-[14px] flex items-center justify-between group transition-colors"
+                  className="p-3.5 bg-[#1D2822] border border-[#2A372F] rounded-[14px] flex flex-col gap-2"
                 >
-                  <div className="pr-2">
-                    <h4 className="text-[14px] font-semibold text-[#EAF1EC] group-hover:text-[#FFC857] transition-colors line-clamp-1">
-                      {src.title}
-                    </h4>
-                    <p className="text-[11px] text-[#9AAAA0] mt-0.5 truncate">
-                      {src.url}
-                    </p>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="pr-2 min-w-0">
+                      <h4 className="text-[14px] font-semibold text-[#EAF1EC] line-clamp-1">
+                        {src.title}
+                      </h4>
+                      <p className="text-[11px] text-[#9AAAA0] mt-0.5 truncate">
+                        {src.url}
+                      </p>
+                    </div>
+                    {src.url && (
+                      <a
+                        href={src.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 hover:bg-[#2A372F] rounded text-[#9AAAA0] hover:text-[#FFC857] transition-colors flex-shrink-0"
+                        title="Open external source"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    )}
                   </div>
-                  <ExternalLink className="w-4 h-4 text-[#9AAAA0] flex-shrink-0" />
-                </a>
+                  {src.excerpt && (
+                    <div className="bg-[#0E1411] border-l-2 border-[#9BE564] p-2.5 rounded-r text-[12px] text-[#C4D1C9] italic leading-relaxed">
+                      "{src.excerpt}"
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
 
             <button
               onClick={() => setSelectedClaimSources(null)}
-              className="w-full h-12 bg-[#1D2822] hover:bg-[#2A372F] text-[#EAF1EC] font-bold text-[14px] rounded-btn transition-colors"
+              className="w-full h-12 bg-[#1D2822] hover:bg-[#2A372F] text-[#EAF1EC] font-bold text-[14px] rounded-btn transition-colors mt-auto"
             >
               Done
             </button>

@@ -1,14 +1,15 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { BottomTabBar } from "@/components/navigation/BottomTabBar";
+import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
   title: "Deep Roots — Everything has roots",
   description: "Snap, paste, or type anything. See what it's made of, where it came from, and what it connects to.",
   manifest: "/manifest.json",
   icons: {
-    icon: "/icon.png",
-    apple: "/icon.png",
+    icon: "/icon-192.png",
+    apple: "/apple-touch-icon.png",
   },
 };
 
@@ -29,6 +30,7 @@ export default function RootLayout({
         <main className="mx-auto flex min-h-screen max-w-[440px] flex-col relative shadow-2xl bg-[#0E1411] border-x border-[#1A231E]">
           {children}
           <BottomTabBar />
+          <ServiceWorkerRegister />
         </main>
       </body>
     </html>

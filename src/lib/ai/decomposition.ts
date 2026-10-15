@@ -297,7 +297,7 @@ export async function decomposeInput({
   if (!rawJsonText && anthropicKey) {
     try {
       const anthropic = new Anthropic({ apiKey: anthropicKey });
-      const modelName = process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20241022";
+      const modelName = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 
       const content: any[] = [];
       if (imageBase64) {
@@ -422,7 +422,7 @@ Focus on the deeper causal mechanism or hidden system. Return valid JSON only.`;
     try {
       const anthropic = new Anthropic({ apiKey: anthropicKey });
       const response = await anthropic.messages.create({
-        model: process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-20241022",
+        model: process.env.ANTHROPIC_HAIKU_MODEL || "claude-haiku-4-5-20251001",
         max_tokens: 2500,
         system: SYSTEM_DECOMPOSITION_PROMPT,
         messages: [{ role: "user", content: prompt }],

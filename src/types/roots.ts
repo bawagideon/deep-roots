@@ -4,12 +4,14 @@ export interface ClaimSource {
   title: string;
   url: string;
   retrievedAt: string;
+  excerpt?: string;
 }
 
 export interface Claim {
   id: string; // e.g. "c1"
   text: string; // one checkable statement <= 140 chars
   status: "established" | "interpretation" | "open_question";
+  evidenceStatus?: "supported" | "contradicted" | "insufficient" | "unverified";
   sources: ClaimSource[]; // empty initially, filled via Pass 2 / search
 }
 

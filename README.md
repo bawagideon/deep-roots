@@ -35,7 +35,7 @@ Deep Roots transforms ordinary things into an interconnected, persistent map of 
   - Money: `#9BE564`
   - Tech: `#5FE0E8`
   - Origins: `#FF86B8`
-- **AI Intelligence**: Gemini 2.5 Flash / Claude 3.5 Sonnet & Haiku with strict Zod runtime schema validation.
+- **AI Intelligence**: Gemini 3.8 Flash / Claude 5.5 Sonnet & Haiku with strict Zod runtime schema validation.
 - **Persistence**: Dual-layer offline-first local state + Supabase PostgreSQL ready.
 
 ---

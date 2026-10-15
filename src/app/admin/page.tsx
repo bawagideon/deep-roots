@@ -28,6 +28,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [killSwitchActive, setKillSwitchActive] = useState(false);
   const [stats, setStats] = useState<any>(null);
+  const [healthInfo, setHealthInfo] = useState<any>(null);
 
   const fetchReports = async () => {
     try {
@@ -44,21 +45,50 @@ export default function AdminPage() {
     }
   };
 
+  const fetchServerSettings = async () => {
+    try {
+      const [killRes, healthRes] = await Promise.all([
+        fetch("/api/admin/kill-switch"),
+        fetch("/api/health"),
+      ]);
+
+      if (killRes.ok) {
+        const data = await killRes.json();
+        setKillSwitchActive(!!data.active);
+      }
+      if (healthRes.ok) {
+        const hData = await healthRes.json();
+        setHealthInfo(hData);
+      }
+    } catch (err) {
+      console.error("Failed to load server admin settings:", err);
+    }
+  };
+
   useEffect(() => {
     fetchReports();
+    fetchServerSettings();
     setStats(getUserStats());
-    if (typeof window !== "undefined") {
-      setKillSwitchActive(
-        localStorage.getItem("deeproots_kill_switch") === "true"
-      );
-    }
   }, []);
 
-  const toggleKillSwitch = () => {
+  const toggleKillSwitch = async () => {
     const next = !killSwitchActive;
     setKillSwitchActive(next);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("deeproots_kill_switch", String(next));
+
+    try {
+      const res = await fetch("/api/admin/kill-switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: next }),
+      });
+      if (!res.ok) {
+        // Revert on error
+        setKillSwitchActive(!next);
+        alert("Failed to update server-side kill switch.");
+      }
+    } catch {
+      setKillSwitchActive(!next);
+      alert("Network error updating kill switch.");
     }
   };
 
