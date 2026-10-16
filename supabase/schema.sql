@@ -1,11 +1,32 @@
 -- =============================================================================
 -- DEEP ROOTS: PRODUCTION POSTGRESQL SCHEMA (SUPABASE)
--- Version: 3.0 (Clerk Identity, Hardened Quotas, Privileged Field Protection)
+-- Version: 3.1 (Clerk Identity Migration & Fail-Closed Quota Functions)
 -- =============================================================================
 
 -- Enable required extensions
 create extension if not exists "uuid-ossp";
 create extension if not exists "pgcrypto";
+
+-- -----------------------------------------------------------------------------
+-- PRE-MIGRATION: Cleanly upgrade from legacy UUID auth to Clerk TEXT IDs
+-- -----------------------------------------------------------------------------
+do $$
+begin
+    -- If legacy profiles.id is still UUID (from Supabase native auth), drop old tables
+    -- so they can be recreated cleanly with Clerk string IDs (e.g. 'user_2...')
+    if exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'public' and table_name = 'profiles' and column_name = 'id' and data_type = 'uuid'
+    ) then
+        drop table if exists public.subscriptions cascade;
+        drop table if exists public.billing_events cascade;
+        drop table if exists public.edges cascade;
+        drop table if exists public.claim_sources cascade;
+        drop table if exists public.claims cascade;
+        drop table if exists public.roots cascade;
+        drop table if exists public.profiles cascade;
+    end if;
+end $$;
 
 -- -----------------------------------------------------------------------------
 -- 1. APP SETTINGS & EMERGENCY OPERATIONS (Kill switches, model configs)
@@ -336,46 +357,46 @@ alter table public.app_settings enable row level security;
 -- Profiles
 drop policy if exists "Users can view own profile" on public.profiles;
 create policy "Users can view own profile" on public.profiles
-    for select using (auth.jwt()->>'sub' = id or auth.uid()::text = id);
+    for select using (coalesce(auth.jwt()->>'sub', auth.uid()::text) = id);
 
 drop policy if exists "Users can update own profile" on public.profiles;
 create policy "Users can update own profile" on public.profiles
-    for update using (auth.jwt()->>'sub' = id or auth.uid()::text = id);
+    for update using (coalesce(auth.jwt()->>'sub', auth.uid()::text) = id);
 
 -- Subscriptions: view own subscription only
 drop policy if exists "Users can view own subscription" on public.subscriptions;
 create policy "Users can view own subscription" on public.subscriptions
-    for select using (auth.jwt()->>'sub' = user_id or auth.uid()::text = user_id);
+    for select using (coalesce(auth.jwt()->>'sub', auth.uid()::text) = user_id);
 
 -- Roots
 drop policy if exists "Users can view own roots" on public.roots;
 create policy "Users can view own roots" on public.roots
-    for select using (auth.jwt()->>'sub' = user_id or auth.uid()::text = user_id or user_id is null);
+    for select using (coalesce(auth.jwt()->>'sub', auth.uid()::text) = user_id or user_id is null);
 
 drop policy if exists "Users can insert own roots" on public.roots;
 create policy "Users can insert own roots" on public.roots
-    for insert with check (auth.jwt()->>'sub' = user_id or auth.uid()::text = user_id or user_id is null);
+    for insert with check (coalesce(auth.jwt()->>'sub', auth.uid()::text) = user_id or user_id is null);
 
 drop policy if exists "Users can update own roots" on public.roots;
 create policy "Users can update own roots" on public.roots
-    for update using (auth.jwt()->>'sub' = user_id or auth.uid()::text = user_id);
+    for update using (coalesce(auth.jwt()->>'sub', auth.uid()::text) = user_id);
 
 drop policy if exists "Users can delete own roots" on public.roots;
 create policy "Users can delete own roots" on public.roots
-    for delete using (auth.jwt()->>'sub' = user_id or auth.uid()::text = user_id);
+    for delete using (coalesce(auth.jwt()->>'sub', auth.uid()::text) = user_id);
 
 -- Edges
 drop policy if exists "Users can view own edges" on public.edges;
 create policy "Users can view own edges" on public.edges
-    for select using (auth.jwt()->>'sub' = user_id or auth.uid()::text = user_id or user_id is null);
+    for select using (coalesce(auth.jwt()->>'sub', auth.uid()::text) = user_id or user_id is null);
 
 drop policy if exists "Users can insert own edges" on public.edges;
 create policy "Users can insert own edges" on public.edges
-    for insert with check (auth.jwt()->>'sub' = user_id or auth.uid()::text = user_id or user_id is null);
+    for insert with check (coalesce(auth.jwt()->>'sub', auth.uid()::text) = user_id or user_id is null);
 
 drop policy if exists "Users can delete own edges" on public.edges;
 create policy "Users can delete own edges" on public.edges
-    for delete using (auth.jwt()->>'sub' = user_id or auth.uid()::text = user_id);
+    for delete using (coalesce(auth.jwt()->>'sub', auth.uid()::text) = user_id);
 
 -- Claims & sources
 drop policy if exists "Claims readable with root" on public.claims;
