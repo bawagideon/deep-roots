@@ -7,10 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "tsx --test tests/**/*.test.ts",
     "test:eval": "tsx scripts/run-eval.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.33.1",
+    "@clerk/nextjs": "^5.7.6",
     "@google/generative-ai": "^0.24.0",
     "@supabase/supabase-js": "^2.47.10",
     "canvas-confetti": "^1.9.4",

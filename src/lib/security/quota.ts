@@ -1,19 +1,12 @@
 import { NextRequest } from "next/server";
+import { createHash } from "crypto";
 import { getEntitlements } from "./entitlements";
 import { getServerUser, supabaseAdmin } from "@/lib/supabase/server";
 
-interface QuotaRecord {
-  date: string; // YYYY-MM-DD
-  count: number;
-}
-
-// Memory fallback store for local development or database fallback
-const fallbackQuotaStore = new Map<string, QuotaRecord>();
-
 /**
- * Authoritatively identifies the caller.
- * Uses verified Supabase auth session. If anonymous/unauthenticated, derives IP-based ID.
- * NEVER trusts unverified x-user-id headers!
+ * Derives a privacy-preserving, trusted client identifier for guests.
+ * Uses trusted headers (x-real-ip or leftmost x-forwarded-for) hashed with a server salt.
+ * Authenticated users are identified by their verified session ID.
  */
 export async function getClientIdentifier(req: NextRequest): Promise<{
   clientId: string;
@@ -24,27 +17,40 @@ export async function getClientIdentifier(req: NextRequest): Promise<{
 
   if (verifiedUser?.id) {
     return {
-      clientId: `user:${verifiedUser.id}`,
+      clientId: `usr_${verifiedUser.id}`,
       userId: verifiedUser.id,
-      isAnonymous: verifiedUser.isAnonymous || false,
+      isAnonymous: false,
     };
   }
 
-  // Fallback to client IP for unauthenticated requests
+  // Trusted proxy IP extraction
+  const realIp = req.headers.get("x-real-ip");
   const forwarded = req.headers.get("x-forwarded-for");
-  const ip = forwarded ? forwarded.split(",")[0].trim() : "127.0.0.1";
-  const sanitizedIp = ip.replace(/[^a-fA-F0-9:.]/g, "");
+  let rawIp = "127.0.0.1";
+
+  if (realIp) {
+    rawIp = realIp.trim();
+  } else if (forwarded) {
+    rawIp = forwarded.split(",")[0].trim();
+  }
+
+  const sanitizedIp = rawIp.replace(/[^a-fA-F0-9:.]/g, "");
+  const serverSalt = process.env.IP_HASH_SALT || "deep-roots-hardened-salt-v3";
+  const ipHash = createHash("sha256")
+    .update(`${sanitizedIp}:${serverSalt}`)
+    .digest("hex")
+    .slice(0, 16);
 
   return {
-    clientId: `ip:${sanitizedIp}`,
+    clientId: `gst_${ipHash}`,
     userId: undefined,
     isAnonymous: true,
   };
 }
 
 /**
- * Atomically checks and reserves quota for the caller.
- * Checks Supabase `usage` table or database RPC, falling back to local store.
+ * Atomically checks and reserves quota for the caller using PostgreSQL transaction locking.
+ * FAILS CLOSED: Never silently falls back to an in-memory map in production.
  */
 export async function checkAndIncrementQuota(
   clientId: string,
@@ -56,6 +62,7 @@ export async function checkAndIncrementQuota(
   limit: number;
   resetSeconds: number;
   isKillSwitch?: boolean;
+  error?: string;
 }> {
   const entitlements = await getEntitlements(userId);
 
@@ -67,6 +74,7 @@ export async function checkAndIncrementQuota(
       limit: 0,
       resetSeconds: 3600,
       isKillSwitch: true,
+      error: "SCAN_KILL_SWITCH_ACTIVE",
     };
   }
 
@@ -78,7 +86,7 @@ export async function checkAndIncrementQuota(
   midnight.setUTCHours(24, 0, 0, 0);
   const resetSeconds = Math.max(0, Math.floor((midnight.getTime() - now.getTime()) / 1000));
 
-  // Try Database Atomic RPC first
+  // Atomic Database RPC call
   try {
     const { data, error } = await supabaseAdmin.rpc("atomic_reserve_quota", {
       p_user_id: clientId,
@@ -87,54 +95,50 @@ export async function checkAndIncrementQuota(
       p_limit: dailyLimit,
     });
 
-    if (!error && data && data.length > 0) {
+    if (error) {
+      console.error("Quota reservation RPC error:", error.message);
+      // Fail closed when quota service is unavailable
+      return {
+        allowed: false,
+        remaining: 0,
+        limit: dailyLimit,
+        resetSeconds,
+        error: "QUOTA_SERVICE_UNAVAILABLE",
+      };
+    }
+
+    if (data && data.length > 0) {
       const res = data[0];
       return {
-        allowed: res.allowed,
-        remaining: res.remaining,
+        allowed: Boolean(res.allowed),
+        remaining: Number(res.remaining),
         limit: dailyLimit,
         resetSeconds,
       };
     }
-  } catch (err) {
-    // If RPC is not created yet, fall back to memory store
-  }
 
-  // In-memory fallback
-  const record = fallbackQuotaStore.get(clientId);
-
-  if (!record || record.date !== today) {
-    fallbackQuotaStore.set(clientId, { date: today, count: 1 });
-    return {
-      allowed: true,
-      remaining: Math.max(0, dailyLimit - 1),
-      limit: dailyLimit,
-      resetSeconds,
-    };
-  }
-
-  if (record.count >= dailyLimit) {
     return {
       allowed: false,
       remaining: 0,
       limit: dailyLimit,
       resetSeconds,
+      error: "UNEXPECTED_QUOTA_RESPONSE",
+    };
+  } catch (err: any) {
+    console.error("Database connection failure in quota check:", err);
+    // Fail closed
+    return {
+      allowed: false,
+      remaining: 0,
+      limit: dailyLimit,
+      resetSeconds,
+      error: "DATABASE_CONNECTION_ERROR",
     };
   }
-
-  record.count += 1;
-  fallbackQuotaStore.set(clientId, record);
-
-  return {
-    allowed: true,
-    remaining: Math.max(0, dailyLimit - record.count),
-    limit: dailyLimit,
-    resetSeconds,
-  };
 }
 
 /**
- * Releases/refunds quota reservation if model call fails.
+ * Releases/refunds quota reservation if downstream model call fails.
  */
 export async function refundQuota(
   clientId: string,
@@ -148,12 +152,8 @@ export async function refundQuota(
       p_day: today,
       p_kind: kind,
     });
-  } catch {}
-
-  const record = fallbackQuotaStore.get(clientId);
-  if (record && record.date === today && record.count > 0) {
-    record.count -= 1;
-    fallbackQuotaStore.set(clientId, record);
+  } catch (err) {
+    console.error("Failed to execute quota refund:", err);
   }
 }
 
@@ -170,14 +170,25 @@ export async function getQuotaStatus(
   const entitlements = await getEntitlements(userId);
   const dailyLimit = entitlements.dailyScanLimit;
   const today = new Date().toISOString().split("T")[0];
-  const record = fallbackQuotaStore.get(clientId);
 
-  if (!record || record.date !== today) {
-    return { remaining: dailyLimit, limit: dailyLimit };
+  try {
+    const { data } = await supabaseAdmin
+      .from("usage")
+      .select("count")
+      .eq("user_id", clientId)
+      .eq("day", today)
+      .eq("kind", "scan")
+      .single();
+
+    const used = data?.count || 0;
+    return {
+      remaining: Math.max(0, dailyLimit - used),
+      limit: dailyLimit,
+    };
+  } catch {
+    return {
+      remaining: dailyLimit,
+      limit: dailyLimit,
+    };
   }
-
-  return {
-    remaining: Math.max(0, dailyLimit - record.count),
-    limit: dailyLimit,
-  };
 }

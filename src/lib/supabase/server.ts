@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { auth } from "@clerk/nextjs/server";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co";
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "placeholder-service-key";
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder-anon-key";
 
 export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey || anonKey, {
   auth: {
@@ -21,11 +22,58 @@ export interface VerifiedUser {
 
 /**
  * Authoritatively verifies the caller's session on the server.
+ * Uses Clerk session verification first, with Supabase Bearer token fallback.
  * NEVER trusts spoofable headers like x-user-id.
  */
 export async function getServerUser(req: NextRequest): Promise<VerifiedUser | null> {
   try {
-    // 1. Check Bearer Authorization header
+    // 1. Authoritative verification via Clerk session
+    try {
+      const { userId } = auth();
+      if (userId) {
+        let role = "user";
+
+        // Check if user is an configured admin
+        const adminIds = (process.env.ADMIN_USER_IDS || "").split(",").map((s) => s.trim());
+        if (adminIds.includes(userId)) {
+          role = "admin";
+        }
+
+        // Fetch or sync user profile role in Supabase
+        try {
+          const { data: profile } = await supabaseAdmin
+            .from("profiles")
+            .select("role, plan")
+            .eq("id", userId)
+            .single();
+
+          if (profile?.role) {
+            role = profile.role;
+          } else {
+            // Lazy profile creation for new Clerk users
+            await supabaseAdmin.from("profiles").upsert(
+              {
+                id: userId,
+                role,
+                plan: "free",
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "id" }
+            );
+          }
+        } catch {}
+
+        return {
+          id: userId,
+          role,
+          isAnonymous: false,
+        };
+      }
+    } catch {
+      // Clerk auth() context might not be active (e.g. non-Clerk request or static generation)
+    }
+
+    // 2. Check Bearer Authorization header
     const authHeader = req.headers.get("authorization");
     let token: string | undefined;
 
@@ -33,7 +81,7 @@ export async function getServerUser(req: NextRequest): Promise<VerifiedUser | nu
       token = authHeader.substring(7).trim();
     }
 
-    // 2. Check Supabase auth cookie if no header
+    // 3. Check Supabase auth cookie if no header
     if (!token) {
       const cookieHeader = req.headers.get("cookie") || "";
       const match = cookieHeader.match(/sb-access-token=([^;]+)/);
@@ -54,7 +102,6 @@ export async function getServerUser(req: NextRequest): Promise<VerifiedUser | nu
       return null;
     }
 
-    // Fetch user profile role if available
     let role = "user";
     try {
       const { data: profile } = await supabaseAdmin
@@ -78,11 +125,14 @@ export async function getServerUser(req: NextRequest): Promise<VerifiedUser | nu
 }
 
 /**
- * Checks if the caller has admin permissions in the database.
+ * Checks if the caller has admin permissions in the database or env config.
  */
 export async function isServerAdmin(user: VerifiedUser | null): Promise<boolean> {
   if (!user) return false;
   if (user.role === "admin") return true;
+
+  const adminIds = (process.env.ADMIN_USER_IDS || "").split(",").map((s) => s.trim());
+  if (adminIds.includes(user.id)) return true;
 
   try {
     const { data: profile } = await supabaseAdmin
@@ -102,7 +152,6 @@ export async function isServerAdmin(user: VerifiedUser | null): Promise<boolean>
  * Checks the database app_settings table first; falls back to env vars.
  */
 export async function getServerSetting<T>(key: string, defaultValue: T): Promise<T> {
-  // Check env var override
   const envKey = key.toUpperCase();
   if (process.env[envKey] !== undefined) {
     const raw = process.env[envKey];
@@ -121,9 +170,7 @@ export async function getServerSetting<T>(key: string, defaultValue: T): Promise
     if (!error && data?.value !== undefined) {
       return data.value as T;
     }
-  } catch {
-    // Database table may not be initialized yet; fallback safely
-  }
+  } catch {}
 
   return defaultValue;
 }

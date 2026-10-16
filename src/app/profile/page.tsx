@@ -5,15 +5,15 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
-  Settings as SettingsIcon,
   Check,
-  Mail,
-  X,
+  User,
+  ShieldCheck,
+  ExternalLink,
 } from "lucide-react";
-import { UserStats, Lens, UserProfile } from "@/types/roots";
+import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
+import { UserStats, Lens } from "@/types/roots";
 import {
   getUserStats,
-  saveUserProfile,
   getStoredRoots,
   getStoredEdges,
 } from "@/lib/storage/store";
@@ -21,72 +21,34 @@ import { LENSES } from "@/lib/constants";
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { user, isLoaded: isUserLoaded } = useUser();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [userRootsCount, setUserRootsCount] = useState(0);
   const [edgesCount, setEdgesCount] = useState(0);
-  const [isEditing, setIsEditing] = useState(false);
-  const [displayName, setDisplayName] = useState("Explorer");
-  const [showEmailModal, setShowEmailModal] = useState(false);
-  const [emailInput, setEmailInput] = useState("");
+  const [serverPlan, setServerPlan] = useState<"free" | "pro">("free");
 
   useEffect(() => {
     const s = getUserStats();
     setStats(s);
-    setDisplayName(s.profile?.displayName || "Explorer");
 
     const roots = getStoredRoots().filter((r) => !r.isSeeded);
     setUserRootsCount(roots.length);
 
     const edges = getStoredEdges();
     setEdgesCount(edges.length);
-  }, []);
+
+    // Sync user with backend profile and fetch live entitlement status
+    if (user?.id) {
+      fetch("/api/me")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.plan) setServerPlan(data.plan);
+        })
+        .catch(() => {});
+    }
+  }, [user?.id]);
 
   if (!stats) return null;
-
-  const profile = stats.profile || {
-    id: "anon",
-    displayName: "Explorer",
-    isAnonymous: true,
-    plan: "free",
-    memberSince: "October 2026",
-  };
-
-  const handleSaveName = () => {
-    const updated: UserProfile = {
-      ...profile,
-      displayName: displayName.trim() || "Explorer",
-    };
-    saveUserProfile(updated);
-    setStats(getUserStats());
-    setIsEditing(false);
-  };
-
-  const handleSignInGoogle = () => {
-    const updated: UserProfile = {
-      ...profile,
-      displayName: "Gideon",
-      email: "gideon@example.com",
-      isAnonymous: false,
-    };
-    saveUserProfile(updated);
-    setStats(getUserStats());
-  };
-
-  const handleSignInEmail = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!emailInput.trim()) return;
-    const namePart = emailInput.split("@")[0];
-    const capitalized = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-    const updated: UserProfile = {
-      ...profile,
-      displayName: capitalized,
-      email: emailInput.trim(),
-      isAnonymous: false,
-    };
-    saveUserProfile(updated);
-    setStats(getUserStats());
-    setShowEmailModal(false);
-  };
 
   // Find top lens
   const topLensKey = (Object.keys(stats.lensCounts) as Lens[]).reduce(
@@ -111,83 +73,57 @@ export default function ProfilePage() {
             Profile
           </h1>
 
-          <button
-            onClick={() => setIsEditing(!isEditing)}
-            className="text-[15px] font-semibold text-[#FFC857] hover:underline"
-          >
-            {isEditing ? "Done" : "Edit"}
-          </button>
+          <div className="w-10 h-10 flex items-center justify-center">
+            <SignedIn>
+              <UserButton afterSignOutUrl="/" />
+            </SignedIn>
+          </div>
         </div>
 
-        {/* User Card */}
-        <div className="flex items-center gap-4 mb-7">
-          {/* Avatar with top lens ring */}
-          <div
-            className="w-20 h-20 rounded-full bg-[#151D18] border-2 flex items-center justify-center text-[30px] font-black text-[#EAF1EC] flex-shrink-0 shadow-sm"
-            style={{ borderColor: topLensColor }}
-          >
-            {displayName.charAt(0).toUpperCase()}
-          </div>
-
-          <div className="min-w-0">
-            {isEditing ? (
-              <div className="flex items-center gap-2 mb-1">
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  className="bg-[#1D2822] border border-[#2A372F] rounded-lg px-2.5 py-1 text-[#EAF1EC] font-bold text-[18px] outline-none max-w-[160px]"
+        {/* Signed In View */}
+        <SignedIn>
+          <div className="flex items-center gap-4 mb-7">
+            <div
+              className="w-20 h-20 rounded-full bg-[#151D18] border-2 flex items-center justify-center text-[28px] font-black text-[#EAF1EC] flex-shrink-0 shadow-sm relative overflow-hidden"
+              style={{ borderColor: topLensColor }}
+            >
+              {user?.imageUrl ? (
+                <img
+                  src={user.imageUrl}
+                  alt={user.fullName || "User"}
+                  className="w-full h-full object-cover"
                 />
-                <button
-                  onClick={handleSaveName}
-                  className="p-1 rounded-lg bg-[#FFC857] text-[#0E1411]"
-                >
-                  <Check className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <h2 className="text-[26px] font-extrabold text-[#EAF1EC] tracking-tight truncate leading-tight">
-                {displayName}
+              ) : (
+                (user?.firstName?.charAt(0) || user?.username?.charAt(0) || "E").toUpperCase()
+              )}
+            </div>
+
+            <div className="min-w-0">
+              <h2 className="text-[22px] font-extrabold text-[#EAF1EC] tracking-tight truncate leading-tight">
+                {user?.fullName || user?.username || "Explorer"}
               </h2>
-            )}
 
-            <p className="text-[13px] text-[#9AAAA0] mt-0.5">
-              Member since {profile.memberSince || "October 2026"}
-            </p>
+              <p className="text-[13px] text-[#9AAAA0] mt-0.5 truncate">
+                {user?.primaryEmailAddress?.emailAddress || "Signed in"}
+              </p>
 
-            <span className="inline-block mt-2 px-3 py-1 rounded-full bg-[#151D18] border border-[#2A372F] text-[12px] font-semibold text-[#9AAAA0] capitalize">
-              {profile.plan === "pro" ? "Pro plan" : "Free plan"}
-            </span>
-          </div>
-        </div>
-
-        {/* Save your Tree Callout Card */}
-        {profile.isAnonymous ? (
-          <div className="bg-[#151D18] border border-[#FFC857] rounded-[22px] p-5 mb-6 shadow-sm">
-            <h3 className="text-[18px] font-bold text-[#EAF1EC] tracking-tight mb-1">
-              Save your Tree
-            </h3>
-            <p className="text-[13px] text-[#9AAAA0] leading-snug mb-4">
-              You are a guest. Add a sign-in so your roots follow you to any
-              device.
-            </p>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleSignInGoogle}
-                className="flex-1 h-12 bg-[#FFC857] hover:bg-[#E5B040] text-[#0E1411] font-bold text-[14px] rounded-btn flex items-center justify-center transition-all shadow-sm"
-              >
-                Continue with Google
-              </button>
-              <button
-                onClick={() => setShowEmailModal(true)}
-                className="flex-1 h-12 bg-[#1D2822] hover:bg-[#23312A] border border-[#2A372F] text-[#EAF1EC] font-bold text-[14px] rounded-btn flex items-center justify-center transition-all"
-              >
-                Use email
-              </button>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="px-3 py-1 rounded-full bg-[#151D18] border border-[#2A372F] text-[12px] font-semibold text-[#9BE564] capitalize flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  {serverPlan === "pro" ? "Pro Plan" : "Free Plan"}
+                </span>
+                {serverPlan === "free" && (
+                  <Link
+                    href="/upgrade"
+                    className="text-[12px] font-bold text-[#FFC857] hover:underline"
+                  >
+                    Upgrade →
+                  </Link>
+                )}
+              </div>
             </div>
           </div>
-        ) : (
+
           <div className="bg-[#151D18] border border-[#2A372F] rounded-[22px] p-4 mb-6 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-[#1D2822] flex items-center justify-center text-[#9BE564]">
@@ -198,12 +134,57 @@ export default function ProfilePage() {
                   Tree Synced & Backed Up
                 </span>
                 <span className="text-[12px] text-[#9AAAA0]">
-                  Connected as {profile.email}
+                  Connected to verified Clerk account
                 </span>
               </div>
             </div>
           </div>
-        )}
+        </SignedIn>
+
+        {/* Signed Out View */}
+        <SignedOut>
+          <div className="flex items-center gap-4 mb-7">
+            <div
+              className="w-20 h-20 rounded-full bg-[#151D18] border-2 border-[#2A372F] flex items-center justify-center text-[#9AAAA0] flex-shrink-0 shadow-sm"
+            >
+              <User className="w-8 h-8" />
+            </div>
+
+            <div className="min-w-0">
+              <h2 className="text-[22px] font-extrabold text-[#EAF1EC] tracking-tight leading-tight">
+                Guest Explorer
+              </h2>
+              <p className="text-[13px] text-[#9AAAA0] mt-0.5">
+                Saved in local browser memory
+              </p>
+              <span className="inline-block mt-2 px-3 py-1 rounded-full bg-[#151D18] border border-[#2A372F] text-[12px] font-semibold text-[#9AAAA0]">
+                Free Guest
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-[#151D18] border border-[#FFC857] rounded-[22px] p-5 mb-6 shadow-sm">
+            <h3 className="text-[18px] font-bold text-[#EAF1EC] tracking-tight mb-1">
+              Save your Tree
+            </h3>
+            <p className="text-[13px] text-[#9AAAA0] leading-snug mb-4">
+              You are currently using local storage. Sign in with Clerk so your discoveries and Tree follow you everywhere.
+            </p>
+
+            <div className="flex items-center gap-3">
+              <SignInButton mode="modal">
+                <button className="flex-1 h-12 bg-[#FFC857] hover:bg-[#E5B040] text-[#0E1411] font-bold text-[14px] rounded-btn flex items-center justify-center transition-all shadow-sm">
+                  Sign In
+                </button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button className="flex-1 h-12 bg-[#1D2822] hover:bg-[#23312A] border border-[#2A372F] text-[#EAF1EC] font-bold text-[14px] rounded-btn flex items-center justify-center transition-all">
+                  Create Account
+                </button>
+              </SignUpButton>
+            </div>
+          </div>
+        </SignedOut>
 
         {/* Stats Row */}
         <div className="grid grid-cols-3 gap-3 mb-7">
@@ -287,43 +268,6 @@ export default function ProfilePage() {
           Your Tree is private. Only cards you choose to share are public.
         </p>
       </div>
-
-      {/* Email Modal */}
-      {showEmailModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="relative w-full max-w-[360px] bg-[#0E1411] border border-[#2A372F] rounded-[24px] p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[17px] font-bold text-[#EAF1EC]">
-                Sign in with Email
-              </h3>
-              <button
-                onClick={() => setShowEmailModal(false)}
-                className="w-8 h-8 rounded-full bg-[#151D18] flex items-center justify-center text-[#9AAAA0]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSignInEmail} className="flex flex-col gap-4">
-              <input
-                type="email"
-                required
-                placeholder="you@example.com"
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                className="w-full h-12 bg-[#151D18] border border-[#2A372F] rounded-[14px] px-3.5 text-[#EAF1EC] text-[14px] outline-none focus:border-[#FFC857]"
-              />
-
-              <button
-                type="submit"
-                className="w-full h-12 bg-[#FFC857] hover:bg-[#E5B040] text-[#0E1411] font-bold text-[14px] rounded-btn transition-all"
-              >
-                Send magic link
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

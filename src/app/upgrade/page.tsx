@@ -3,20 +3,68 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { X, Check } from "lucide-react";
-import { upgradePlan } from "@/lib/storage/store";
+import { X, Check, Loader2, AlertCircle } from "lucide-react";
 
 export default function UpgradePage() {
   const router = useRouter();
   const [billingCycle, setBillingCycle] = useState<"yearly" | "monthly">("yearly");
-  const [isSuccess, setIsSuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const handleSubscribe = () => {
-    upgradePlan("pro");
-    setIsSuccess(true);
-    setTimeout(() => {
-      router.back();
-    }, 1200);
+  const handleSubscribe = async () => {
+    setIsLoading(true);
+    setNotice(null);
+
+    try {
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cycle: billingCycle }),
+      });
+
+      const data = await res.json();
+
+      if (res.status === 401 && data.redirectTo) {
+        router.push(data.redirectTo);
+        return;
+      }
+
+      if (data.status === "redirect" && data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+        return;
+      }
+
+      if (data.status === "sandbox") {
+        setNotice(
+          "Payment checkout initialized in sandbox mode: awaiting live gateway credentials in server environment."
+        );
+      } else if (data.error) {
+        setNotice(data.error);
+      }
+    } catch (err: any) {
+      setNotice("Unable to reach billing checkout service. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    setIsLoading(true);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/billing/restore", { method: "POST" });
+      const data = await res.json();
+      if (data.restored) {
+        setNotice("Pro subscription restored successfully!");
+        setTimeout(() => router.push("/profile"), 1500);
+      } else {
+        setNotice(data.message || "No active subscription found on file.");
+      }
+    } catch {
+      setNotice("Failed to restore purchases.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -46,11 +94,11 @@ export default function UpgradePage() {
         {/* Feature Checklist */}
         <div className="flex flex-col gap-3.5 mb-7">
           {[
-            "Many more scans and rabbit holes every day",
-            "Sources checked for every claim",
+            "High fair-use cap for daily scans and rabbit holes",
+            "Authoritative evidence check across all claims",
             "Unexpected Connections in full",
-            "Daily Root picked from your Tree",
-            "Export your Tree and clean share cards",
+            "Daily Root personalized from your Tree",
+            "Export your Tree (Markdown, JSON) and clean share cards",
           ].map((feature, idx) => (
             <div key={idx} className="flex items-start gap-3">
               <Check className="w-4 h-4 text-[#FFC857] stroke-[3] mt-0.5 flex-shrink-0" />
@@ -60,6 +108,14 @@ export default function UpgradePage() {
             </div>
           ))}
         </div>
+
+        {/* Notice Banner */}
+        {notice && (
+          <div className="p-3.5 mb-6 rounded-[14px] bg-[#1D2822] border border-[#FFC857]/40 text-[#EAF1EC] text-[13px] flex items-start gap-2.5 leading-snug">
+            <AlertCircle className="w-4 h-4 text-[#FFC857] flex-shrink-0 mt-0.5" />
+            <span>{notice}</span>
+          </div>
+        )}
 
         {/* Plan Selector */}
         <div className="flex flex-col gap-3 mb-6">
@@ -108,14 +164,11 @@ export default function UpgradePage() {
       <div className="flex flex-col items-center gap-3 pt-2">
         <button
           onClick={handleSubscribe}
-          disabled={isSuccess}
+          disabled={isLoading}
           className="w-full h-14 bg-[#FFC857] hover:bg-[#E5B040] active:scale-[0.98] text-[#0E1411] font-bold text-[16px] rounded-btn flex items-center justify-center transition-all shadow-[0_4px_16px_rgba(255,200,87,0.25)]"
         >
-          {isSuccess ? (
-            <span className="flex items-center gap-2">
-              <Check className="w-5 h-5 stroke-[3]" />
-              Activated Pro!
-            </span>
+          {isLoading ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
           ) : billingCycle === "yearly" ? (
             "Start free trial"
           ) : (
@@ -129,7 +182,8 @@ export default function UpgradePage() {
 
         <div className="flex items-center gap-4 text-[12px] text-[#9AAAA0] pt-1">
           <button
-            onClick={() => alert("Purchases restored successfully.")}
+            onClick={handleRestore}
+            disabled={isLoading}
             className="hover:text-[#EAF1EC] transition-colors"
           >
             Restore purchase

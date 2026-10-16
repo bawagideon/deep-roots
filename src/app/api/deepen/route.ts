@@ -65,17 +65,23 @@ export async function POST(req: NextRequest) {
     }
 
     if (!quota.allowed) {
+      const isUnavailable =
+        quota.error === "QUOTA_SERVICE_UNAVAILABLE" ||
+        quota.error === "DATABASE_CONNECTION_ERROR";
+
       return NextResponse.json(
         {
           error: {
-            code: "QUOTA_EXCEEDED",
-            message: "Daily rabbit hole limit reached. Please return tomorrow.",
-            retryable: false,
+            code: isUnavailable ? "QUOTA_SERVICE_UNAVAILABLE" : "QUOTA_EXCEEDED",
+            message: isUnavailable
+              ? "Quota check service is temporarily unavailable. Please retry in a few moments."
+              : "Daily rabbit hole limit reached. Please return tomorrow.",
+            retryable: isUnavailable,
             requestId,
           },
           quota,
         },
-        { status: 429 }
+        { status: isUnavailable ? 503 : 429 }
       );
     }
 

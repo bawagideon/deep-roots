@@ -1,4 +1,5 @@
 import { Claim, ClaimSource } from "@/types/roots";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 interface WikiSearchResult {
   title: string;
@@ -17,7 +18,6 @@ interface RetrievedCandidate {
  */
 async function searchWikipediaForCandidate(claimText: string): Promise<RetrievedCandidate | null> {
   try {
-    // Extract key entities or terms (first 6 words or main noun phrases)
     const terms = claimText
       .replace(/[^\w\s]/gi, "")
       .split(/\s+/)
@@ -68,44 +68,94 @@ async function searchWikipediaForCandidate(claimText: string): Promise<Retrieved
     }
 
     return null;
-  } catch (err) {
+  } catch {
     return null;
   }
 }
 
 /**
- * Semantic & Entity Verifier:
- * Assesses whether the retrieved excerpt actually substantiates the claim assertion,
- * rather than simply sharing a title.
+ * LLM-Powered Fact Verification:
+ * Asks the language model to assess whether the reference passage factually supports,
+ * contradicts, or lacks sufficient proof for the specific claim.
  */
-function evaluatePassageSupport(
+async function verifyPassageWithAI(
+  claimText: string,
+  passage: string
+): Promise<{
+  status: "supported" | "contradicted" | "insufficient";
+  excerpt: string;
+} | null> {
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) return null;
+
+  try {
+    const genAI = new GoogleGenerativeAI(geminiKey);
+    const model = genAI.getGenerativeModel({
+      model: process.env.GEMINI_FALLBACK_MODEL || "gemini-3.7-flash",
+      generationConfig: {
+        responseMimeType: "application/json",
+        maxOutputTokens: 250,
+      },
+    });
+
+    const prompt = `You are a rigorous, objective academic fact checker.
+Claim to evaluate: "${claimText}"
+Reference passage: "${passage}"
+
+Task: Does the reference passage factually substantiate the specific claim?
+Output valid JSON only with keys "status" and "excerpt":
+{
+  "status": "supported" | "contradicted" | "insufficient",
+  "excerpt": "the exact sentence from the reference passage that demonstrates this status"
+}
+Rules:
+- "supported": The passage directly affirms the factual assertion of the claim.
+- "contradicted": The passage directly conflicts with or disproves the claim.
+- "insufficient": The passage is related or on-topic, but does not definitively prove the claim assertion.`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+
+    const res = await model.generateContent(prompt);
+    clearTimeout(timeout);
+
+    const text = res.response.text();
+    const parsed = JSON.parse(text);
+
+    if (["supported", "contradicted", "insufficient"].includes(parsed.status)) {
+      return {
+        status: parsed.status,
+        excerpt: parsed.excerpt || passage.slice(0, 160),
+      };
+    }
+  } catch (err) {
+    // Model call timed out or failed; fallback safely
+  }
+
+  return null;
+}
+
+/**
+ * Deterministic Filter & Fallback Evaluator:
+ * NOTE: As per strict audit guidelines, a pure keyword match ALONE must NEVER earn "supported".
+ * If AI evaluation is unavailable, keyword matches produce "insufficient" (evidence on-topic,
+ * pending verification), contradiction triggers "contradicted", and no matches produce "unverified".
+ */
+function evaluatePassageSupportHeuristic(
   claimText: string,
   extract: string
 ): {
-  status: "supported" | "contradicted" | "insufficient";
+  status: "contradicted" | "insufficient" | "unverified";
   relevantExcerpt: string;
 } {
   const normExtract = extract.toLowerCase();
   const normClaim = claimText.toLowerCase();
 
-  // Extract core keywords from claim
   const keywords = normClaim
     .replace(/[^\w\s]/g, "")
     .split(/\s+/)
     .filter((w) => w.length > 3 && !["this", "that", "with", "from", "were", "been", "have", "they"].includes(w));
 
-  if (keywords.length === 0) {
-    return {
-      status: "insufficient",
-      relevantExcerpt: extract.slice(0, 200),
-    };
-  }
-
-  // Count keyword overlaps
-  const matchedKeywords = keywords.filter((kw) => normExtract.includes(kw));
-  const overlapRatio = matchedKeywords.length / keywords.length;
-
-  // Find most relevant sentence in the extract
   const sentences = extract.split(/(?<=[.?!])\s+/);
   let bestSentence = sentences[0] || extract;
   let maxSentenceMatches = 0;
@@ -119,7 +169,7 @@ function evaluatePassageSupport(
     }
   }
 
-  // Check for contradiction cues
+  // Check explicit contradiction cues
   const contradictionWords = ["disproven", "myth", "incorrectly", "contrary to", "falsely attributed", "no evidence that"];
   const hasContradiction = contradictionWords.some((w) => normExtract.includes(w) && keywords.some((kw) => normExtract.includes(kw)));
 
@@ -130,62 +180,55 @@ function evaluatePassageSupport(
     };
   }
 
-  // Requires at least 50% keyword overlap AND at least 2 distinct key entity matches in the passage
-  if (overlapRatio >= 0.45 && maxSentenceMatches >= 2) {
+  if (maxSentenceMatches >= 2) {
+    // Keyword match alone can only attain "insufficient" (related, but unproven)
     return {
-      status: "supported",
+      status: "insufficient",
       relevantExcerpt: bestSentence.trim(),
     };
   }
 
   return {
-    status: "insufficient",
+    status: "unverified",
     relevantExcerpt: bestSentence.trim(),
   };
 }
 
 /**
  * Pass 2 Evidence Evaluator:
- * For each claim, queries knowledge sources, extracts relevant passages, and evaluates
- * whether the text supports, contradicts, or is insufficient to back the claim.
- * Downgrades unbacked claims to 'interpretation' or 'open_question' and sets evidenceStatus.
+ * Queries external knowledge sources, extracts authoritative passages, and evaluates
+ * whether the text reliably supports, contradicts, or is insufficient to back the claim.
  */
 export async function verifyClaimsPass2(claims: Claim[]): Promise<Claim[]> {
   const verified: Claim[] = [];
 
   for (const claim of claims) {
-    // 1. If claim already has a verified excerpt and source, re-verify status
-    if (claim.sources && claim.sources.length > 0 && claim.sources[0].excerpt) {
-      const evaluation = evaluatePassageSupport(claim.text, claim.sources[0].excerpt);
-      verified.push({
-        ...claim,
-        evidenceStatus: evaluation.status,
-        status: evaluation.status === "supported" ? claim.status : "interpretation",
-      });
-      continue;
-    }
-
-    // 2. Retrieve real candidate reference
     const candidate = await searchWikipediaForCandidate(claim.text);
 
     if (candidate) {
-      const evaluation = evaluatePassageSupport(claim.text, candidate.extract);
+      // 1. Try authoritative AI evaluation first
+      let evaluation = await verifyPassageWithAI(claim.text, candidate.extract);
+
+      // 2. Fall back to heuristic if AI unavailable (never awards "supported" on keyword alone)
+      if (!evaluation) {
+        evaluation = evaluatePassageSupportHeuristic(claim.text, candidate.extract) as any;
+      }
 
       const source: ClaimSource = {
-        title: `${candidate.title} — Reference`,
+        title: `${candidate.title} — Canonical Reference`,
         url: candidate.url,
         retrievedAt: new Date().toISOString(),
-        excerpt: evaluation.relevantExcerpt,
+        excerpt: evaluation?.excerpt || candidate.extract.slice(0, 160),
       };
 
-      if (evaluation.status === "supported") {
+      if (evaluation?.status === "supported") {
         verified.push({
           ...claim,
           status: claim.status === "open_question" ? "open_question" : "established",
           evidenceStatus: "supported",
           sources: [source],
         });
-      } else if (evaluation.status === "contradicted") {
+      } else if (evaluation?.status === "contradicted") {
         verified.push({
           ...claim,
           status: "open_question",
@@ -193,7 +236,6 @@ export async function verifyClaimsPass2(claims: Claim[]): Promise<Claim[]> {
           sources: [source],
         });
       } else {
-        // Insufficient support from passage: downgrade unbacked established claim
         verified.push({
           ...claim,
           status: "interpretation",
@@ -202,7 +244,7 @@ export async function verifyClaimsPass2(claims: Claim[]): Promise<Claim[]> {
         });
       }
     } else {
-      // No reference found: mark as unverified and downgrade
+      // No reference found: mark as unverified
       verified.push({
         ...claim,
         status: claim.status === "established" ? "interpretation" : claim.status,

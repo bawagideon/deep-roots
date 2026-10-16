@@ -180,6 +180,10 @@ export async function safeFetchUrl(
       throw new Error("Only HTTP and HTTPS URLs are allowed");
     }
 
+    if (parsed.port && parsed.port !== "80" && parsed.port !== "443") {
+      throw new Error("Connections are restricted to standard web ports (80, 443)");
+    }
+
     // Verify destination IP safety before opening connection
     await validateDestinationHost(parsed.hostname);
 

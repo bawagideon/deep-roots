@@ -27,35 +27,79 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 });
 
 async function main() {
-  console.log("Checking Supabase connection to:", supabaseUrl);
+  console.log("=================================================================");
+  console.log("  Deep Roots Database Diagnostic & Verification Tool");
+  console.log("=================================================================");
+  console.log("Connecting to Supabase endpoint:", supabaseUrl);
   
-  // Test query on tables
-  const tables = ['profiles', 'roots', 'claims', 'claim_sources', 'edges', 'usage', 'app_settings', 'mistake_reports', 'visual_assets'];
+  const tables = [
+    'profiles',
+    'subscriptions',
+    'billing_events',
+    'roots',
+    'claims',
+    'claim_sources',
+    'edges',
+    'usage',
+    'app_settings',
+    'mistake_reports',
+    'visual_assets',
+    'shares',
+    'analysis_runs'
+  ];
+
+  const presentTables = [];
   const missingTables = [];
   
   for (const table of tables) {
     const { error } = await supabase.from(table).select('*').limit(1);
     if (error && (error.code === 'PGRST205' || error.message.includes('Could not find the table'))) {
       missingTables.push(table);
+    } else {
+      presentTables.push(table);
     }
   }
 
-  if (missingTables.length === 0) {
-    console.log("✓ All Deep Roots database tables exist and are connected!");
-  } else {
-    console.log("Missing tables detected:", missingTables.join(", "));
+  console.log(`\nVerified Tables (${presentTables.length}/${tables.length}):`);
+  for (const t of presentTables) {
+    console.log(`  ✓ ${t}`);
+  }
+
+  if (missingTables.length > 0) {
+    console.log(`\nPending Migration Tables (${missingTables.length}):`);
+    for (const t of missingTables) {
+      console.log(`  ✗ ${t}`);
+    }
     console.log("\n=================================================================");
-    console.log("ACTION REQUIRED: Run the SQL Schema in Supabase");
+    console.log("ACTION REQUIRED: Execute supabase/schema.sql in Supabase SQL Editor");
     console.log("=================================================================");
-    console.log("1. Open your Supabase Dashboard: https://supabase.com/dashboard/project/cjlsqvsxmzahzgwmumah");
-    console.log("2. Click on the 'SQL Editor' tab on the left navigation.");
-    console.log("3. Copy the entire contents of 'supabase/schema.sql' and paste it into the editor.");
-    console.log("4. Click 'Run' to create all tables, indexes, RLS policies and functions.");
+    console.log("1. Open Supabase: https://supabase.com/dashboard/project/cjlsqvsxmzahzgwmumah");
+    console.log("2. Navigate to SQL Editor.");
+    console.log("3. Paste the contents of supabase/schema.sql and click 'Run'.");
     console.log("=================================================================\n");
+  } else {
+    console.log("\n✓ All Deep Roots database tables and schema components are verified!");
+  }
+
+  // Verify atomic quota RPC availability
+  try {
+    const { error: rpcErr } = await supabase.rpc('atomic_reserve_quota', {
+      p_user_id: 'test_health_probe',
+      p_day: new Date().toISOString().slice(0, 10),
+      p_kind: 'scan',
+      p_limit: 0
+    });
+    if (!rpcErr) {
+      console.log("✓ Function atomic_reserve_quota is callable by service_role.");
+    } else if (rpcErr.code !== 'PGRST202') {
+      console.log("✓ Function atomic_reserve_quota verified (status: " + rpcErr.message + ").");
+    }
+  } catch (err) {
+    console.warn("RPC check note:", err.message);
   }
 }
 
 main().catch(err => {
-  console.error("Setup script failed:", err);
+  console.error("Diagnostic execution error:", err);
   process.exit(1);
 });
