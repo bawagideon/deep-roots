@@ -125,6 +125,15 @@ export function saveRoot(root: StoredRoot): void {
   localStorage.setItem(ROOTS_STORAGE_KEY, JSON.stringify(updated));
   updateStatsOnSave(root);
   window.dispatchEvent(new Event("deeproots_storage_updated"));
+
+  // Asynchronously persist to Supabase cloud
+  if (navigator.onLine) {
+    fetch("/api/roots", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ root }),
+    }).catch(() => {});
+  }
 }
 
 export function deleteRoot(id: string): void {
@@ -141,6 +150,11 @@ export function deleteRoot(id: string): void {
   saveUserStats(stats);
 
   window.dispatchEvent(new Event("deeproots_storage_updated"));
+
+  // Asynchronously delete from Supabase cloud
+  if (navigator.onLine) {
+    fetch(`/api/roots/${id}`, { method: "DELETE" }).catch(() => {});
+  }
 }
 
 export function clearAllData(): void {
@@ -178,6 +192,68 @@ export function saveEdge(edge: GraphEdge): void {
     saveUserStats(stats);
 
     window.dispatchEvent(new Event("deeproots_storage_updated"));
+  }
+}
+
+/**
+ * Bidirectional cloud synchronization:
+ * Fetches user discoveries from Supabase, merges into local storage, and pushes
+ * any offline/guest discoveries up to the authenticated cloud account.
+ */
+export async function syncRootsFromCloud(): Promise<{ synced: boolean; count: number }> {
+  if (typeof window === "undefined" || !navigator.onLine) {
+    return { synced: false, count: 0 };
+  }
+
+  try {
+    const res = await fetch("/api/roots");
+    if (!res.ok) return { synced: false, count: 0 };
+
+    const data = await res.json();
+    if (!data.authenticated) return { synced: false, count: 0 };
+
+    const cloudRoots: StoredRoot[] = data.roots || [];
+    const localRoots = getStoredRoots();
+
+    // 1. Merge cloud roots into local storage
+    const cloudMap = new Map(cloudRoots.map((r) => [r.id, r]));
+    const localNonSeeded = localRoots.filter((r) => !r.isSeeded);
+
+    // 2. Identify any local roots not yet in cloud (e.g. created while guest) and upload them
+    const pendingUpload = localNonSeeded.filter((r) => !cloudMap.has(r.id));
+    for (const r of pendingUpload) {
+      fetch("/api/roots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ root: r }),
+      }).catch(() => {});
+    }
+
+    // 3. Update local storage with full cloud set + seeded
+    const seeded = SEEDED_ROOTS.map((r) => ({ ...r, isSeeded: true }));
+    const mergedMap = new Map<string, StoredRoot>();
+
+    cloudRoots.forEach((r) => mergedMap.set(r.id, r));
+    pendingUpload.forEach((r) => mergedMap.set(r.id, r));
+    seeded.forEach((r) => {
+      if (!mergedMap.has(r.id)) mergedMap.set(r.id, r);
+    });
+
+    const finalRoots = Array.from(mergedMap.values());
+    localStorage.setItem(ROOTS_STORAGE_KEY, JSON.stringify(finalRoots));
+
+    if (data.edges && Array.isArray(data.edges) && data.edges.length > 0) {
+      const localEdges = getStoredEdges();
+      const edgeMap = new Map<string, GraphEdge>();
+      localEdges.forEach((e) => edgeMap.set(e.id, e));
+      data.edges.forEach((e: GraphEdge) => edgeMap.set(e.id, e));
+      localStorage.setItem(EDGES_STORAGE_KEY, JSON.stringify(Array.from(edgeMap.values())));
+    }
+
+    window.dispatchEvent(new Event("deeproots_storage_updated"));
+    return { synced: true, count: cloudRoots.length + pendingUpload.length };
+  } catch (err) {
+    return { synced: false, count: 0 };
   }
 }
 

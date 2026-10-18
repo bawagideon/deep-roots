@@ -43,4 +43,14 @@ describe("Quota & Identity Hardening", () => {
     const id2 = await getClientIdentifier(req2);
     assert.equal(id1.clientId, id2.clientId);
   });
+
+  it("fails closed in getQuotaStatus when database is unavailable", async () => {
+    const { getQuotaStatus } = await import("../src/lib/security/quota");
+    const status = await getQuotaStatus("gst_test_unreachable");
+    // When DB is unreachable/mocked without connection, must fail closed with remaining 0
+    assert.equal(status.remaining, 0);
+    assert.ok(status.error === "DATABASE_UNAVAILABLE");
+    assert.equal(status.limit, 5);
+  });
 });
+

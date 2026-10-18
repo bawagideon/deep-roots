@@ -167,7 +167,42 @@ export async function POST(req: NextRequest) {
 
     const rootId = `root-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-    // 6. Record run log asynchronously
+    // 6. If user is authenticated, persist root and claims directly in Supabase
+    if (userId) {
+      try {
+        await supabaseAdmin.from("roots").upsert({
+          id: rootId,
+          user_id: userId,
+          depth: 0,
+          input_kind: inputKind,
+          title: card.title,
+          input_text: inputText || null,
+          card,
+          prompt_version: card.promptVersion || "v3.0",
+          model: card.modelUsed || "gemini-3.8-flash",
+          status: "ready",
+          created_at: new Date().toISOString(),
+        });
+
+        if (Array.isArray(card.claims)) {
+          for (const claim of card.claims) {
+            await supabaseAdmin.from("claims").upsert({
+              id: `${rootId}_${claim.id}`,
+              root_id: rootId,
+              local_id: claim.id,
+              text: claim.text,
+              claim_type: claim.status === "established" ? "fact" : "interpretation",
+              evidence_status: claim.evidenceStatus || "unverified",
+              created_at: new Date().toISOString(),
+            });
+          }
+        }
+      } catch (saveErr: any) {
+        console.warn("Direct scan root persistence notice:", saveErr.message);
+      }
+    }
+
+    // 7. Record run log asynchronously
     try {
       await supabaseAdmin.from("analysis_runs").insert({
         user_id: userId || null,

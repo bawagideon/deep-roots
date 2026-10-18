@@ -16,6 +16,7 @@ import {
   getUserStats,
   getStoredRoots,
   getStoredEdges,
+  syncRootsFromCloud,
 } from "@/lib/storage/store";
 import { LENSES } from "@/lib/constants";
 
@@ -39,6 +40,12 @@ export default function ProfilePage() {
 
     // Sync user with backend profile and fetch live entitlement status
     if (user?.id) {
+      syncRootsFromCloud().then(() => {
+        const updatedRoots = getStoredRoots().filter((r) => !r.isSeeded);
+        setUserRootsCount(updatedRoots.length);
+        setEdgesCount(getStoredEdges().length);
+      });
+
       fetch("/api/me")
         .then((res) => res.json())
         .then((data) => {

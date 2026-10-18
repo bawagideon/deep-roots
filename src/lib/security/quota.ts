@@ -159,6 +159,7 @@ export async function refundQuota(
 
 /**
  * Checks remaining quota without incrementing.
+ * FAILS CLOSED: Returns remaining: 0 and error on database failure.
  */
 export async function getQuotaStatus(
   clientId: string,
@@ -166,29 +167,50 @@ export async function getQuotaStatus(
 ): Promise<{
   remaining: number;
   limit: number;
+  error?: string;
 }> {
   const entitlements = await getEntitlements(userId);
   const dailyLimit = entitlements.dailyScanLimit;
+
+  if (dailyLimit === 0) {
+    return {
+      remaining: 0,
+      limit: 0,
+      error: "SCAN_KILL_SWITCH_ACTIVE",
+    };
+  }
+
   const today = new Date().toISOString().split("T")[0];
 
   try {
-    const { data } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from("usage")
       .select("count")
       .eq("user_id", clientId)
       .eq("day", today)
       .eq("kind", "scan")
-      .single();
+      .maybeSingle();
+
+    if (error) {
+      console.error("Database error in getQuotaStatus:", error.message);
+      return {
+        remaining: 0,
+        limit: dailyLimit,
+        error: "DATABASE_UNAVAILABLE",
+      };
+    }
 
     const used = data?.count || 0;
     return {
       remaining: Math.max(0, dailyLimit - used),
       limit: dailyLimit,
     };
-  } catch {
+  } catch (err: any) {
+    console.error("Database connection failure in getQuotaStatus:", err);
     return {
-      remaining: dailyLimit,
+      remaining: 0,
       limit: dailyLimit,
+      error: "DATABASE_UNAVAILABLE",
     };
   }
 }

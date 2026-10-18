@@ -76,6 +76,7 @@ export interface StoredRoot {
   title: string;
   card: RootsCard;
   lenses: Lens[];
+  visual?: any;
   createdAt: string;
   isSeeded?: boolean;
 }
@@ -88,6 +89,7 @@ export interface GraphEdge {
   why: string;
   limits?: string;
   claimIds?: string[];
+  createdBy?: string;
   createdAt: string;
 }
 

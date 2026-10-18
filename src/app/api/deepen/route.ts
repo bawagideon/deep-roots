@@ -94,11 +94,47 @@ export async function POST(req: NextRequest) {
       currentDepth,
     });
 
-    // 5. Log run asynchronously
+    const childRootId = `root-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    // 5. If user is authenticated, persist child root and parent-child edge in Supabase
+    if (userId) {
+      try {
+        await supabaseAdmin.from("roots").upsert({
+          id: childRootId,
+          user_id: userId,
+          depth: currentDepth + 1,
+          input_kind: "question",
+          title: childCard.title,
+          input_text: questionText,
+          card: childCard,
+          prompt_version: childCard.promptVersion || "v3.0",
+          model: childCard.modelUsed || "gemini-3.8-flash",
+          status: "ready",
+          created_at: new Date().toISOString(),
+        });
+
+        // Insert edge linking parent to child
+        const edgeId = `edge-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        await supabaseAdmin.from("edges").upsert({
+          id: edgeId,
+          user_id: userId,
+          from_root: (parentCard as any).id || "parent",
+          to_root: childRootId,
+          type: kind === "cause" ? "cause" : kind === "compare" ? "contrast" : "parent",
+          why: questionText,
+          created_by: "ai",
+          created_at: new Date().toISOString(),
+        });
+      } catch (saveErr: any) {
+        console.warn("Direct deepen root persistence notice:", saveErr.message);
+      }
+    }
+
+    // 6. Log run asynchronously
     try {
       await supabaseAdmin.from("analysis_runs").insert({
         user_id: userId || null,
-        root_id: null,
+        root_id: childRootId,
         job: "deepen",
         provider: "gemini",
         model: childCard.modelUsed || "gemini-3.8-flash",
@@ -109,6 +145,7 @@ export async function POST(req: NextRequest) {
     } catch {}
 
     return NextResponse.json({
+      rootId: childRootId,
       card: childCard,
       depth: currentDepth + 1,
       quota,

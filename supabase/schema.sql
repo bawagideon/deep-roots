@@ -8,23 +8,41 @@ create extension if not exists "uuid-ossp";
 create extension if not exists "pgcrypto";
 
 -- -----------------------------------------------------------------------------
--- PRE-MIGRATION: Cleanly upgrade from legacy UUID auth to Clerk TEXT IDs
+-- PRE-MIGRATION: Non-destructively upgrade from legacy UUID auth to Clerk TEXT IDs
+-- Preserves existing user profiles, roots, claims, and edges in place.
 -- -----------------------------------------------------------------------------
 do $$
 begin
-    -- If legacy profiles.id is still UUID (from Supabase native auth), drop old tables
-    -- so they can be recreated cleanly with Clerk string IDs (e.g. 'user_2...')
+    -- If legacy profiles.id is still UUID (from Supabase native auth), convert safely in place
     if exists (
         select 1 from information_schema.columns 
         where table_schema = 'public' and table_name = 'profiles' and column_name = 'id' and data_type = 'uuid'
     ) then
-        drop table if exists public.subscriptions cascade;
-        drop table if exists public.billing_events cascade;
-        drop table if exists public.edges cascade;
-        drop table if exists public.claim_sources cascade;
-        drop table if exists public.claims cascade;
-        drop table if exists public.roots cascade;
-        drop table if exists public.profiles cascade;
+        -- 1. Drop foreign key constraints referencing profiles(id)
+        alter table if exists public.subscriptions drop constraint if exists subscriptions_user_id_fkey;
+        alter table if exists public.edges drop constraint if exists edges_user_id_fkey;
+        alter table if exists public.roots drop constraint if exists roots_user_id_fkey;
+        alter table if exists public.profiles drop constraint if exists profiles_id_fkey;
+
+        -- 2. Convert user_id / id columns to text
+        alter table public.profiles alter column id type text using id::text;
+        
+        if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'subscriptions') then
+            alter table public.subscriptions alter column user_id type text using user_id::text;
+        end if;
+
+        if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'roots') then
+            alter table public.roots alter column user_id type text using user_id::text;
+        end if;
+
+        if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'edges') then
+            alter table public.edges alter column user_id type text using user_id::text;
+        end if;
+
+        -- 3. Re-add foreign key constraints
+        alter table if exists public.subscriptions add constraint subscriptions_user_id_fkey foreign key (user_id) references public.profiles(id) on delete cascade;
+        alter table if exists public.roots add constraint roots_user_id_fkey foreign key (user_id) references public.profiles(id) on delete cascade;
+        alter table if exists public.edges add constraint edges_user_id_fkey foreign key (user_id) references public.profiles(id) on delete cascade;
     end if;
 end $$;
 

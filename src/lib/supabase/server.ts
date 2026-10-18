@@ -11,6 +11,23 @@ export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey || anonKey
     persistSession: false,
     autoRefreshToken: false,
   },
+  global: {
+    fetch: (url, options = {}) => {
+      const urlStr =
+        typeof url === "string"
+          ? url
+          : url instanceof URL
+          ? url.href
+          : (url as Request).url;
+      if (urlStr.includes("placeholder.supabase.co")) {
+        return Promise.reject(
+          new Error("Supabase environment is not configured (placeholder URL)")
+        );
+      }
+      const signal = AbortSignal.timeout(4000);
+      return fetch(url, { ...options, signal: options.signal || signal });
+    },
+  },
 });
 
 export interface VerifiedUser {
