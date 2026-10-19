@@ -57,7 +57,7 @@ export default function RootCardPage() {
       setRoot(found);
 
       // Trigger Pass 2: real source verification if claims don't have sources yet
-      const needsVerification = found.card.claims.some(
+      const needsVerification = (found.card.claims || []).some(
         (c) => (!c.sources || c.sources.length === 0) && c.status === "established"
       );
 
@@ -66,7 +66,7 @@ export default function RootCardPage() {
         fetch("/api/evidence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ claims: found.card.claims }),
+          body: JSON.stringify({ claims: found.card.claims || [] }),
         })
           .then((res) => res.json())
           .then((data) => {
@@ -82,6 +82,16 @@ export default function RootCardPage() {
       }
     }
   }, [rootId]);
+
+  useEffect(() => {
+    if (root) {
+      const c = activeRabbitHole ? activeRabbitHole.card : root.card;
+      setVisualSpec(buildConstellationSpec(c));
+      getCardVisualSpec(c)
+        .then((s) => setVisualSpec(s))
+        .catch(() => {});
+    }
+  }, [root, activeRabbitHole]);
 
   if (!root) {
     return (
@@ -100,21 +110,11 @@ export default function RootCardPage() {
   const card = activeRabbitHole ? activeRabbitHole.card : root.card;
   const currentVisualSpec = visualSpec || buildConstellationSpec(card);
 
-  useEffect(() => {
-    if (root) {
-      const c = activeRabbitHole ? activeRabbitHole.card : root.card;
-      setVisualSpec(buildConstellationSpec(c));
-      getCardVisualSpec(c)
-        .then((s) => setVisualSpec(s))
-        .catch(() => {});
-    }
-  }, [root, activeRabbitHole]);
-
-  const verifiedSourcesCount = card.claims.filter(
+  const verifiedSourcesCount = (card.claims || []).filter(
     (c) => c.sources && c.sources.length > 0 && c.evidenceStatus === "supported"
   ).length;
-  const establishedCount = card.claims.filter((c) => c.status === "established").length;
-  const interpretationCount = card.claims.filter((c) => c.status === "interpretation").length;
+  const establishedCount = (card.claims || []).filter((c) => c.status === "established").length;
+  const interpretationCount = (card.claims || []).filter((c) => c.status === "interpretation").length;
 
   const handleToggleBookmark = (e?: React.MouseEvent<HTMLButtonElement>) => {
     if (isSaved) {
@@ -338,7 +338,7 @@ export default function RootCardPage() {
         </h2>
 
         <div className="flex flex-col gap-3">
-          {card.components.map((comp, idx) => {
+          {(card.components || []).map((comp, idx) => {
             const lensInfo = comp.lens ? LENSES[comp.lens] : undefined;
             return (
               <div
@@ -397,7 +397,7 @@ export default function RootCardPage() {
         </h2>
 
         <div className="flex flex-col gap-2.5">
-          {card.nextQuestions.map((q, idx) => (
+          {(card.nextQuestions || []).map((q, idx) => (
             <button
               key={idx}
               onClick={() =>
@@ -438,13 +438,13 @@ export default function RootCardPage() {
         </div>
 
         <div className="flex flex-col gap-3">
-          {card.claims.map((claim) => (
+          {(card.claims || []).map((claim) => (
             <div
               key={claim.id}
               className="p-4 bg-[#151D18] border border-[#2A372F] rounded-card"
             >
               <p className="text-[14px] text-[#EAF1EC] leading-snug mb-3 font-medium">
-                "{claim.text}"
+                &ldquo;{claim.text}&rdquo;
               </p>
 
               <div className="flex items-center justify-between">
@@ -507,7 +507,7 @@ export default function RootCardPage() {
           Connected to
         </h2>
         <div className="flex flex-wrap gap-2">
-          {card.concepts.map((con, idx) => (
+          {(card.concepts || []).map((con, idx) => (
             <Link
               key={idx}
               href="/tree"
@@ -567,7 +567,7 @@ export default function RootCardPage() {
 
             <div className="mb-4">
               <p className="text-[13px] text-[#9AAAA0] mb-2 leading-relaxed">
-                Claim statement: <span className="text-[#EAF1EC] italic">"{selectedClaimSources.text}"</span>
+                Claim statement: <span className="text-[#EAF1EC] italic">&ldquo;{selectedClaimSources.text}&rdquo;</span>
               </p>
               {selectedClaimSources.evidenceStatus && (
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#1D2822] border border-[#2A372F]">
@@ -616,7 +616,7 @@ export default function RootCardPage() {
                   </div>
                   {src.excerpt && (
                     <div className="bg-[#0E1411] border-l-2 border-[#9BE564] p-2.5 rounded-r text-[12px] text-[#C4D1C9] italic leading-relaxed">
-                      "{src.excerpt}"
+                      &ldquo;{src.excerpt}&rdquo;
                     </div>
                   )}
                 </div>
@@ -670,7 +670,7 @@ export default function RootCardPage() {
               </div>
 
               <div className="space-y-2 mb-4">
-                {card.components.slice(0, 3).map((comp, idx) => (
+                {(card.components || []).slice(0, 3).map((comp, idx) => (
                   <div key={idx} className="text-[12px] text-[#9AAAA0] flex items-baseline gap-2">
                     <span
                       className="w-2 h-2 rounded-full flex-shrink-0"
@@ -686,7 +686,7 @@ export default function RootCardPage() {
 
               {/* Lens Color Strip */}
               <div className="flex items-center gap-1.5 pt-3 border-t border-[#2A372F]">
-                {card.lenses.map((l) => (
+                {(card.lenses || []).map((l) => (
                   <div
                     key={l}
                     className="h-1.5 flex-1 rounded-full"

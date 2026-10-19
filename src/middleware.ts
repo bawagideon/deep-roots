@@ -1,4 +1,12 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+
+const isClerkConfigured = Boolean(
+  process.env.CLERK_SECRET_KEY &&
+  !process.env.CLERK_SECRET_KEY.includes("placeholder") &&
+  !process.env.CLERK_SECRET_KEY.includes("mock") &&
+  process.env.CLERK_SECRET_KEY.length > 25
+);
 
 const isPublicRoute = createRouteMatcher([
   "/",
@@ -36,11 +44,20 @@ const isPublicRoute = createRouteMatcher([
   "/icon(.*)",
 ]);
 
-export default clerkMiddleware((auth, request) => {
-  if (!isPublicRoute(request)) {
-    auth().protect();
+const clerkAuthHandler = isClerkConfigured
+  ? clerkMiddleware((auth, request) => {
+      if (!isPublicRoute(request)) {
+        auth().protect();
+      }
+    })
+  : null;
+
+export default function middleware(request: any, event: any) {
+  if (!isClerkConfigured || !clerkAuthHandler) {
+    return NextResponse.next();
   }
-});
+  return clerkAuthHandler(request, event);
+}
 
 export const config = {
   matcher: [

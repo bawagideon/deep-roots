@@ -45,7 +45,10 @@ export default function AnalyzingPage() {
 
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || "Decomposition failed");
+          const msg =
+            errData?.error?.message ||
+            (typeof errData?.error === "string" ? errData.error : "Decomposition failed");
+          throw new Error(msg);
         }
 
         const data = await res.json();
@@ -145,7 +148,7 @@ export default function AnalyzingPage() {
             <div className="p-6 text-center">
               <div className="text-3xl mb-2">🔍</div>
               <p className="text-[14px] text-[#9AAAA0] font-medium max-w-[260px] truncate">
-                "{inputText || "Decomposing..."}"
+                &ldquo;{inputText || "Decomposing..."}&rdquo;
               </p>
             </div>
           )}
