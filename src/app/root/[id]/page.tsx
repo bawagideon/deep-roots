@@ -24,6 +24,8 @@ import { VisualStage } from "@/components/visual/VisualStage";
 import { buildConstellationSpec, getCardVisualSpec } from "@/lib/visual/generator";
 import { VisualSpec } from "@/types/visual";
 import confetti from "canvas-confetti";
+import { UnearthReveal } from "@/components/motion/UnearthReveal";
+import { SeedArc } from "@/components/motion/SeedArc";
 
 export default function RootCardPage() {
   const params = useParams();
@@ -32,6 +34,7 @@ export default function RootCardPage() {
 
   const [root, setRoot] = useState<StoredRoot | null>(null);
   const [isSaved, setIsSaved] = useState(true);
+  const [saveButtonRect, setSaveButtonRect] = useState<DOMRect | null>(null);
   const [isVerifyingSources, setIsVerifyingSources] = useState(false);
   const [selectedClaimSources, setSelectedClaimSources] = useState<Claim | null>(null);
   const [activeRabbitHole, setActiveRabbitHole] = useState<{
@@ -113,12 +116,15 @@ export default function RootCardPage() {
   const establishedCount = card.claims.filter((c) => c.status === "established").length;
   const interpretationCount = card.claims.filter((c) => c.status === "interpretation").length;
 
-  const handleToggleBookmark = () => {
+  const handleToggleBookmark = (e?: React.MouseEvent<HTMLButtonElement>) => {
     if (isSaved) {
       // Remove root from store
       deleteRoot(root.id);
       setIsSaved(false);
     } else {
+      if (e?.currentTarget) {
+        setSaveButtonRect(e.currentTarget.getBoundingClientRect());
+      }
       saveRoot(root);
       setIsSaved(true);
     }
@@ -317,32 +323,13 @@ export default function RootCardPage() {
         </div>
       </div>
 
-      {/* THE ROOT Panel */}
-      <div className="bg-[#231A00] border-[1.5px] border-[#FFC857] rounded-card p-5 mb-8 root-panel-glow relative">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-[11px] font-extrabold tracking-wider text-[#FFC857] uppercase">
-            The Root
-          </span>
-          {card.root.lens && (
-            <>
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: LENSES[card.root.lens]?.color || "#FFC857" }}
-              />
-              <span className="text-[12px] text-[#FFC857]/90 font-medium capitalize">
-                {LENSES[card.root.lens]?.label}
-              </span>
-            </>
-          )}
-        </div>
-
-        <h3 className="text-[19px] font-extrabold text-[#EAF1EC] tracking-tight leading-snug mb-2">
-          {card.root.headline}
-        </h3>
-        <p className="text-[14px] text-[#EAF1EC]/90 leading-relaxed font-normal">
-          {card.root.body}
-        </p>
-      </div>
+      {/* THE ROOT Panel with Signature Unearth Reveal */}
+      <UnearthReveal
+        headline={card.root.headline}
+        body={card.root.body}
+        tag={card.root.lens ? `THE ROOT · ${LENSES[card.root.lens]?.label || ""}` : "THE ROOT"}
+        className="mb-8"
+      />
 
       {/* Components Breakdown */}
       <div className="mb-8">
@@ -748,6 +735,12 @@ export default function RootCardPage() {
         isOpen={showPaywallModal}
         onClose={() => setShowPaywallModal(false)}
         featureNotice="Pro unlocks rabbit hole depth 5"
+      />
+
+      {/* Signature Seed Arc Projectile */}
+      <SeedArc
+        startRect={saveButtonRect}
+        onFinish={() => setSaveButtonRect(null)}
       />
     </div>
   );

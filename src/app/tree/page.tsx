@@ -140,51 +140,67 @@ export default function RootTreePage() {
                 strokeWidth="1.2"
               />
 
-              {/* Connecting lines */}
+              {/* Connecting lines & Amber Sap Flow */}
               {roots.map((r, i) => {
                 if (i === 0) return null;
                 const angle = ((i - 1) / Math.max(1, roots.length - 1)) * 2 * Math.PI;
                 const x = centerX + radius * Math.cos(angle);
                 const y = centerY + radius * Math.sin(angle);
                 const isSelected = activeNodeId === r.id;
+                const isDimmed = !!activeNodeId && !isSelected && activeNodeId !== roots[0]?.id;
 
                 return (
-                  <line
-                    key={`line-${r.id}`}
-                    x1={centerX}
-                    y1={centerY}
-                    x2={x}
-                    y2={y}
-                    stroke={isSelected ? "#FFC857" : "#2A372F"}
-                    strokeWidth={isSelected ? "2" : "1.2"}
-                    strokeDasharray={r.depth > 0 ? "none" : "3 3"}
-                  />
+                  <g key={`edge-group-${r.id}`} className={isDimmed ? "node-dimmed" : "transition-opacity duration-300"}>
+                    {/* Base Edge */}
+                    <line
+                      x1={centerX}
+                      y1={centerY}
+                      x2={x}
+                      y2={y}
+                      stroke={isSelected ? "#FFC857" : "#2A372F"}
+                      strokeWidth={isSelected ? "2.2" : "1.5"}
+                    />
+                    {/* Amber Sap Flow Pulse */}
+                    <path
+                      className="sap"
+                      d={`M${centerX} ${centerY} L${x} ${y}`}
+                      style={{ animationDelay: `${-i * 0.45}s` }}
+                    />
+                  </g>
                 );
               })}
 
-              {/* Outer nodes */}
+              {/* Outer nodes with Breathing Animation and Tap-to-Focus */}
               {roots.map((r, i) => {
                 if (i === 0) return null;
                 const angle = ((i - 1) / Math.max(1, roots.length - 1)) * 2 * Math.PI;
                 const x = centerX + radius * Math.cos(angle);
                 const y = centerY + radius * Math.sin(angle);
                 const isSelected = activeNodeId === r.id;
+                const isDimmed = !!activeNodeId && !isSelected && activeNodeId !== roots[0]?.id;
                 const primaryLens = r.lenses?.[0] || "tech";
                 const nodeColor = LENSES[primaryLens]?.color || "#FFC857";
 
                 return (
                   <g
                     key={`node-${r.id}`}
-                    onClick={() => setActiveNodeId(r.id)}
-                    className="cursor-pointer transition-transform hover:scale-110"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      setActiveNodeId((prev) => (prev === r.id ? null : r.id));
+                    }}
+                    className={`cursor-pointer transition-all duration-300 ${
+                      isDimmed ? "node-dimmed" : "hover:scale-105"
+                    }`}
                   >
                     <circle
                       cx={x}
                       cy={y}
                       r={isSelected ? 18 : 14}
-                      fill="#0E1411"
+                      fill="#151D18"
                       stroke={nodeColor}
                       strokeWidth={isSelected ? 3.5 : 2.5}
+                      className="node-breathe"
+                      style={{ animationDelay: `${(i % 5) * -0.6}s` }}
                     />
                     <text
                       x={x}
@@ -193,6 +209,7 @@ export default function RootTreePage() {
                       fill={isSelected ? "#FFC857" : "#9AAAA0"}
                       fontSize="10"
                       fontWeight={isSelected ? "bold" : "normal"}
+                      style={{ paintOrder: "stroke", stroke: "#0E1411", strokeWidth: "3px" }}
                     >
                       {r.title.slice(0, 11)}
                     </text>
@@ -203,20 +220,24 @@ export default function RootTreePage() {
               {/* Center Root Node */}
               {roots[0] && (
                 <g
-                  onClick={() => setActiveNodeId(roots[0].id)}
-                  className="cursor-pointer"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    setActiveNodeId((prev) => (prev === roots[0].id ? null : roots[0].id));
+                  }}
+                  className="cursor-pointer transition-transform hover:scale-105"
                 >
                   <circle
                     cx={centerX}
                     cy={centerY}
                     r={24}
-                    fill="#0E1411"
+                    fill="#151D18"
                     stroke={
                       activeNodeId === roots[0].id
                         ? "#FFC857"
                         : LENSES[roots[0].lenses?.[0] || "tech"]?.color || "#9BE564"
                     }
                     strokeWidth="3.5"
+                    className="node-breathe"
                   />
                   <text
                     x={centerX}
@@ -225,6 +246,7 @@ export default function RootTreePage() {
                     fill="#EAF1EC"
                     fontSize="11"
                     fontWeight="bold"
+                    style={{ paintOrder: "stroke", stroke: "#0E1411", strokeWidth: "3px" }}
                   >
                     {roots[0].title.slice(0, 15)}
                   </text>

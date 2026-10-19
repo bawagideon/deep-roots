@@ -64,3 +64,212 @@ body {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
+
+/* --- Deep Roots Signature Motions System --- */
+
+/* 1. Unearth Reveal */
+.unearth-word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(8px);
+  filter: blur(4px);
+  transition: opacity 0.45s ease-out, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), filter 0.45s ease-out;
+  margin-right: 0.25em;
+}
+
+.unearth-word.on {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+.panel-lit {
+  box-shadow: 0 0 40px rgba(255, 200, 87, 0.35);
+  transition: box-shadow 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 2. Seed Arc & Sprout Tab */
+.seed-projectile {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: #FFC857;
+  box-shadow: 0 0 14px 4px rgba(255, 200, 87, 0.7);
+  pointer-events: none;
+  z-index: 100;
+}
+
+.seed-trail {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: #FFC857;
+  pointer-events: none;
+  animation: seedTrail 0.55s forwards;
+  z-index: 99;
+}
+
+@keyframes seedTrail {
+  to {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+}
+
+.tab-leaf {
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
+  transform: scale(0);
+  transition: transform 0.7s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+.tab-leaf.l2 {
+  transition-delay: 0.12s;
+}
+
+.landed .tab-leaf {
+  transform: scale(1);
+}
+
+.sprout-ring {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 26px;
+  height: 26px;
+  margin-left: -13px;
+  border-radius: 50%;
+  border: 2px solid #9BE564;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.landed .sprout-ring {
+  animation: sproutRingPulse 0.8s ease-out;
+}
+
+@keyframes sproutRingPulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* 3. Sap Flow & Living Graph */
+.edge {
+  stroke: #2A372F;
+  stroke-width: 2;
+  fill: none;
+}
+
+.sap {
+  stroke: #FFC857;
+  stroke-width: 2.2;
+  fill: none;
+  stroke-dasharray: 5 19;
+  stroke-linecap: round;
+  opacity: 0.85;
+  animation: sapFlow 2.6s linear infinite;
+}
+
+@keyframes sapFlow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.node-breathe {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: nodeBreathe 4s ease-in-out infinite;
+}
+
+@keyframes nodeBreathe {
+  50% {
+    transform: scale(1.07);
+  }
+}
+
+.edge-grow {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: edgeGrow 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes edgeGrow {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.node-pop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: nodePop 0.6s cubic-bezier(0.3, 1.6, 0.5, 1) 0.55s both;
+}
+
+@keyframes nodePop {
+  from {
+    transform: scale(0);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.node-dimmed {
+  opacity: 0.15;
+  transition: opacity 0.3s ease-out;
+}
+
+/* 4. Foil 3D Tilt Card */
+.foil-stage {
+  perspective: 700px;
+}
+
+.foil-card {
+  --sx: 0.3;
+  --rx: 0;
+  --ry: 0;
+  position: relative;
+  transform: rotateX(calc(var(--ry) * -12deg)) rotateY(calc(var(--rx) * 14deg));
+  transition: transform 0.15s ease-out;
+  overflow: hidden;
+}
+
+.foil-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background: linear-gradient(
+    115deg,
+    transparent calc(var(--sx) * 100% - 30%),
+    rgba(255, 200, 87, 0.5) calc(var(--sx) * 100%),
+    rgba(127, 184, 255, 0.35) calc(var(--sx) * 100% + 12%),
+    transparent calc(var(--sx) * 100% + 40%)
+  );
+}
+
+/* Accessibility: Honor prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

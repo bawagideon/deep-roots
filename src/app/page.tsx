@@ -6,13 +6,14 @@ import { useRouter } from "next/navigation";
 import { Flame, ArrowRight, Sparkles } from "lucide-react";
 import { StoredRoot, UserStats, Lens } from "@/types/roots";
 import { LENSES } from "@/lib/constants";
-import { getStoredRoots, getUserStats } from "@/lib/storage/store";
+import { getStoredRoots, getUserStats, saveRoot } from "@/lib/storage/store";
 
 export default function HomePage() {
   const router = useRouter();
   const [roots, setRoots] = useState<StoredRoot[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [greeting, setGreeting] = useState("Good day");
+  const [firstRootPlanted, setFirstRootPlanted] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if first-time user
@@ -26,6 +27,23 @@ export default function HomePage() {
     if (currentHour < 12) setGreeting("Good morning");
     else if (currentHour < 18) setGreeting("Good afternoon");
     else setGreeting("Good evening");
+
+    // Process any pending guest root after sign-up
+    const pendingClaim = localStorage.getItem("deeproots_guest_pending_claim");
+    if (pendingClaim) {
+      try {
+        const item = JSON.parse(pendingClaim);
+        saveRoot(item);
+        localStorage.removeItem("deeproots_guest_pending_claim");
+        setFirstRootPlanted(item.title);
+        fetch("/api/claim-guest-root", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(item),
+        }).catch(() => {});
+        window.dispatchEvent(new CustomEvent("deeproots_seed_landed"));
+      } catch {}
+    }
 
     const refreshData = () => {
       setRoots(getStoredRoots());
@@ -70,6 +88,31 @@ export default function HomePage() {
           </Link>
         </div>
       </div>
+
+      {/* First Root Planted Celebration Banner */}
+      {firstRootPlanted && (
+        <div className="mb-6 p-4 rounded-[18px] bg-[#231A00] border border-[#FFC857] shadow-[0_0_24px_rgba(255,200,87,0.25)] flex items-center justify-between animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[#FFC857] text-[#0E1411] flex items-center justify-center font-bold">
+              <Sparkles className="w-5 h-5 fill-current" />
+            </div>
+            <div>
+              <div className="text-[14px] font-extrabold text-[#EAF1EC]">
+                Your first root is planted!
+              </div>
+              <div className="text-[12px] text-[#F3E7C4]">
+                &ldquo;{firstRootPlanted}&rdquo; was saved to your Tree.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setFirstRootPlanted(null)}
+            className="text-[12px] font-bold text-[#FFC857] hover:underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Root of the Day Card */}
       <Link

@@ -9,20 +9,24 @@ import {
   User,
   ShieldCheck,
   ExternalLink,
+  LogOut,
 } from "lucide-react";
-import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
+import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useUser, useClerk } from "@clerk/nextjs";
 import { UserStats, Lens } from "@/types/roots";
 import {
   getUserStats,
   getStoredRoots,
   getStoredEdges,
   syncRootsFromCloud,
+  clearUserDataOnSignOut,
 } from "@/lib/storage/store";
 import { LENSES } from "@/lib/constants";
 
 export default function ProfilePage() {
   const router = useRouter();
   const { user, isLoaded: isUserLoaded } = useUser();
+  const { signOut } = useClerk();
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [userRootsCount, setUserRootsCount] = useState(0);
   const [edgesCount, setEdgesCount] = useState(0);
@@ -82,7 +86,7 @@ export default function ProfilePage() {
 
           <div className="w-10 h-10 flex items-center justify-center">
             <SignedIn>
-              <UserButton afterSignOutUrl="/" />
+              <UserButton afterSignOutUrl="/welcome" />
             </SignedIn>
           </div>
         </div>
@@ -262,8 +266,8 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Bottom Area: Settings Button & Privacy Disclaimer */}
-      <div className="flex flex-col gap-4">
+      {/* Bottom Area: Settings Button & Sign Out */}
+      <div className="flex flex-col gap-3">
         <Link
           href="/settings"
           className="w-full h-14 bg-[#151D18] hover:bg-[#1D2822] border border-[#2A372F] text-[#EAF1EC] font-bold text-[15px] rounded-btn flex items-center justify-center transition-colors"
@@ -271,10 +275,45 @@ export default function ProfilePage() {
           Settings
         </Link>
 
+        <SignedIn>
+          <button
+            onClick={async () => {
+              setIsSigningOut(true);
+              try {
+                await clearUserDataOnSignOut();
+                await new Promise((r) => setTimeout(r, 900)); // Retract animation pause
+                await signOut({ redirectUrl: "/welcome" });
+              } catch {
+                router.push("/welcome");
+              }
+            }}
+            disabled={isSigningOut}
+            className="w-full h-12 bg-[#1A130B] hover:bg-[#2A1F12] border border-[#7A4E00]/40 text-[#FFC857] font-semibold text-[14px] rounded-btn flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>{isSigningOut ? "Securing and signing out..." : "Sign Out"}</span>
+          </button>
+        </SignedIn>
+
         <p className="text-[12px] text-[#9AAAA0] text-center leading-relaxed px-2">
           Your Tree is private. Only cards you choose to share are public.
         </p>
       </div>
+
+      {/* Roots Retract Sign-Out Animation Overlay */}
+      {isSigningOut && (
+        <div className="fixed inset-0 z-50 bg-[#0E1411]/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+          <div className="w-16 h-16 rounded-full bg-[#231A00] border-2 border-[#FFC857] flex items-center justify-center shadow-[0_0_30px_rgba(255,200,87,0.3)] mb-4 animate-pulse">
+            <div className="w-4 h-4 rounded-full bg-[#FFC857] shadow-[0_0_12px_#FFC857]" />
+          </div>
+          <h2 className="text-[20px] font-bold text-[#EAF1EC] tracking-tight mb-2">
+            Your roots are safe.
+          </h2>
+          <p className="text-[14px] text-[#9AAAA0] max-w-[260px]">
+            Device storage cleared. Encrypted in cloud.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

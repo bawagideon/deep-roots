@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Deep Roots: signature motions</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&amp;family=Instrument+Sans:wght@400;500;600&amp;display=swap">
+<style>
+:root{--bg:#FAF8F4;--surface:#FFFFFF;--line:#DDD8CE;--text:#14201A;--muted:#55635B;--accent:#7A4E00;--accentbg:#FFF1CC;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0A0F0C;--surface:#151D18;--line:#2A372F;--text:#EAF1EC;--muted:#9AAAA0;--accent:#FFC857;--accentbg:#231A00}}
+:root[data-theme="dark"]{--bg:#0A0F0C;--surface:#151D18;--line:#2A372F;--text:#EAF1EC;--muted:#9AAAA0;--accent:#FFC857;--accentbg:#231A00}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'Instrument Sans',system-ui,sans-serif;line-height:1.5}
+.wrap{max-width:1000px;margin:0 auto;padding:24px 16px 56px}
+h1{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:800;font-size:clamp(28px,5vw,40px);line-height:1.05;margin:0 0 8px;letter-spacing:-0.02em}
+.lead{color:var(--muted);margin:0 0 24px;max-width:64ch}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:20px}
+.demo{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:16px}
+.demo h2{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:800;font-size:22px;margin:0}
+.meta{color:var(--muted);font-size:13px;margin:2px 0 12px}
+.stage{position:relative;background:#0E1411;border-radius:16px;height:300px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#EAF1EC}
+.play{margin-top:12px;height:44px;padding:0 20px;border-radius:12px;border:0;background:var(--accent);color:var(--bg);font:600 15px 'Instrument Sans',system-ui,sans-serif;cursor:pointer}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .play{color:#231A00}}
+.note{font-size:13px;color:var(--muted);margin-top:8px}
+
+/* 1 Unearth Reveal */
+#pw{position:relative;width:280px}
+.panel{background:#231A00;border:1.5px solid #FFC857;border-radius:20px;padding:18px;transition:box-shadow .9s cubic-bezier(.16,1,.3,1)}
+.panel.lit{box-shadow:0 0 40px rgba(255,200,87,.35)}
+.tag{font-size:11px;font-weight:600;letter-spacing:.1em;color:#FFC857;opacity:0;transition:opacity .5s .3s}
+.panel.lit .tag{opacity:1}
+.hl{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:800;font-size:22px;line-height:1.12;margin:6px 0}
+.w{display:inline-block;opacity:0;transform:translateY(8px);filter:blur(4px);transition:opacity .45s,transform .6s cubic-bezier(.16,1,.3,1),filter .45s;margin-right:.25em}
+.w.on{opacity:1;transform:none;filter:none}
+.body{font-size:14px;color:#F3E7C4;opacity:0;transition:opacity .6s}
+.body.on{opacity:1}
+#soil{position:absolute;left:0;top:0;pointer-events:none}
+
+/* 2 Seed Arc */
+#s2{flex-direction:column;justify-content:space-between;align-items:stretch;padding:16px}
+.mini{background:#151D18;border:1px solid #2A372F;border-radius:16px;padding:14px;margin-top:6px}
+.mini b{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-size:18px}
+.mini small{display:block;color:#9AAAA0;margin-top:2px}
+#add{margin-top:12px;width:100%;height:44px;border-radius:12px;border:0;background:#FFC857;color:#231A00;font:600 15px 'Instrument Sans',system-ui,sans-serif}
+.tabs{display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #2A372F;padding-top:8px;margin:0 -16px -16px;padding-bottom:10px}
+.tab{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;color:#9AAAA0;position:relative}
+.tab svg{width:26px;height:26px}
+#tabTree{color:#EAF1EC}
+.leaf{transform-box:fill-box;transform-origin:0% 100%;transform:scale(0);transition:transform .7s cubic-bezier(.3,1.6,.5,1)}
+.l2{transform-origin:0% 100%}
+.landed .leaf{transform:scale(1)}
+.landed .l2{transition-delay:.12s}
+.ringp{position:absolute;top:2px;left:50%;width:26px;height:26px;margin-left:-13px;border-radius:50%;border:2px solid #9BE564;opacity:0}
+.landed .ringp{animation:ringp .8s ease-out}
+@keyframes ringp{0%{transform:scale(.6);opacity:.9}100%{transform:scale(2.2);opacity:0}}
+#seed{position:absolute;left:0;top:0;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#FFC857;box-shadow:0 0 14px 4px rgba(255,200,87,.7);opacity:0;pointer-events:none}
+.trail{position:absolute;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#FFC857;pointer-events:none;animation:trail .55s forwards}
+@keyframes trail{to{opacity:0;transform:scale(.2)}}
+.cnt{display:inline-block;height:1.2em;overflow:hidden;vertical-align:bottom;position:relative;top:1px}
+.cnt span{display:block;transition:transform .5s cubic-bezier(.16,1,.3,1)}
+.rolled .cnt span{transform:translateY(-100%)}
+
+/* 3 Sap Flow */
+#g{width:100%;height:100%}
+.edge{stroke:#2A372F;stroke-width:2;fill:none}
+.sap{stroke:#FFC857;stroke-width:2.2;fill:none;stroke-dasharray:5 19;stroke-linecap:round;opacity:.85;animation:flow 2.6s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-24}}
+.grow{stroke-dasharray:1;stroke-dashoffset:1;animation:gro .7s cubic-bezier(.16,1,.3,1) forwards}
+@keyframes gro{to{stroke-dashoffset:0}}
+.pop{transform-box:fill-box;transform-origin:center;animation:pop .6s cubic-bezier(.3,1.6,.5,1) .55s both}
+@keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+.nd{cursor:pointer;transition:opacity .3s}
+.nd text{font:600 10px 'Instrument Sans',system-ui,sans-serif;fill:#EAF1EC;paint-order:stroke;stroke:#0E1411;stroke-width:3px}
+.breathe{transform-box:fill-box;transform-origin:center;animation:breathe 4s ease-in-out infinite}
+@keyframes breathe{50%{transform:scale(1.07)}}
+.dim{opacity:.15}
+.sapdim{opacity:0}
+.fadein{opacity:0;animation:fi .5s 1s forwards}
+@keyframes fi{to{opacity:1}}
+
+/* 4 Foil Tilt */
+#s4{perspective:700px}
+#foil{--sx:.3;--rx:0;--ry:0;position:relative;width:210px;height:270px;border-radius:18px;background:#151D18;border:1px solid #2A372F;padding:18px;display:flex;flex-direction:column;justify-content:space-between;transform:rotateX(calc(var(--ry)*-12deg)) rotateY(calc(var(--rx)*14deg));transition:transform .15s ease-out;overflow:hidden}
+#foil::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;mix-blend-mode:screen;background:linear-gradient(115deg,transparent calc(var(--sx)*100% - 30%),rgba(255,200,87,.5) calc(var(--sx)*100%),rgba(127,184,255,.35) calc(var(--sx)*100% + 12%),transparent calc(var(--sx)*100% + 40%))}
+#foil .k{font-size:11px;font-weight:600;letter-spacing:.1em;color:#FFC857}
+#foil .t{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:800;font-size:26px;line-height:1.05}
+#foil .r{font-size:14px;color:#C9D6CE}
+#foil .d{display:flex;gap:6px}
+#foil .d i{width:9px;height:9px;border-radius:50%;display:block}
+.alt{margin-left:8px;height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--text);font:600 14px 'Instrument Sans',system-ui,sans-serif;cursor:pointer}
+.calm *,.calm *::before,.calm *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+</style>
+</head>
+<body>
+<main class="wrap" id="root">
+  <h1>Signature motions</h1>
+  <p class="lead">Four of the moments that define Deep Roots, built with the spec's timing and easing. Press Play, tap, or move your pointer. Everything honours your reduced-motion setting.</p>
+  <div class="grid">
+
+    <section class="demo">
+      <h2>Unearth Reveal</h2>
+      <p class="meta">The Root panel · about 1.1 s · easing grow · haptic [14, 50, 28]</p>
+      <div class="stage"><div id="pw">
+        <div class="panel" id="panel"><div class="tag">THE ROOT</div><div class="hl" id="hl"></div><div class="body" id="bd">Momofuku Ando created them in Japan in 1958, after postwar food shortages.</div></div>
+        <canvas id="soil" aria-hidden="true"></canvas>
+      </div></div>
+      <button class="play" id="p1" type="button">Play</button>
+    </section>
+
+    <section class="demo">
+      <h2>Seed Arc</h2>
+      <p class="meta">Save to the Tree · 0.75 s arc · sprout tab · odometer</p>
+      <div class="stage" id="s2">
+        <div><div class="mini"><b>Instant noodles</b><small>Links in your Tree: <span class="cnt"><span>9</span><span>10</span></span></small>
+          <button id="add" type="button">Add to my Tree</button></div></div>
+        <div class="tabs">
+          <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</div>
+          <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/></svg>Scan</div>
+          <div class="tab" id="tabTree"><span class="ringp"></span><svg id="treeIcon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 22v-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path class="leaf l1" d="M12 15c-5 0-7-3-7-7 5 0 7 2 7 7z" fill="#9BE564"/><path class="leaf l2" d="M12 13c0-5 2-7 7-7 0 5-2 7-7 7z" fill="#9BE564"/></svg>Tree</div>
+        </div>
+        <div id="seed"></div>
+      </div>
+      <button class="play" id="p2" type="button">Play</button>
+    </section>
+
+    <section class="demo">
+      <h2>Sap Flow and Germinate</h2>
+      <p class="meta">Tree · ambient light along threads · tap a node to focus · Play grows a new node</p>
+      <div class="stage"><svg id="g" viewBox="0 0 320 240" role="img" aria-label="A small graph of roots linked to instant noodles"></svg></div>
+      <button class="play" id="p3" type="button">Play</button>
+      <div class="note">Tap a node to dim everything unrelated. Tap the background to clear.</div>
+    </section>
+
+    <section class="demo">
+      <h2>Foil Tilt</h2>
+      <p class="meta">Share card · sheen follows pointer or device tilt</p>
+      <div class="stage" id="s4"><div id="foil" aria-label="Share card for instant noodles">
+        <div class="k">ROOT CARD</div>
+        <div><div class="t">Instant noodles</div><div class="r">Invented to fight hunger.</div></div>
+        <div class="d"><i style="background:#5FE0E8"></i><i style="background:#7FB8FF"></i><i style="background:#FF86B8"></i><i style="background:#9BE564"></i></div>
+      </div></div>
+      <button class="play" id="p4" type="button">Sweep</button><button class="alt" id="tilt" type="button" hidden>Use device tilt</button>
+    </section>
+  </div>
+</main>
+
+<script>
+(function(){
+var $=function(i){return document.getElementById(i);};
+var mq=window.matchMedia?window.matchMedia('(prefers-reduced-motion: reduce)'):null;
+var reduce=!!(mq&&mq.matches);
+if(reduce)$('root').classList.add('calm');
+var low=(navigator.hardwareConcurrency&&navigator.hardwareConcurrency<=4)||(navigator.deviceMemory&&navigator.deviceMemory<=2);
+function buzz(p){try{if(navigator.vibrate)navigator.vibrate(p);}catch(e){}}
+function ease(t){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
+
+/* 1 Unearth Reveal */
+var words='Instant noodles were invented to fight hunger.'.split(' '),hl=$('hl'),wEls=[];
+words.forEach(function(w){var s=document.createElement('span');s.className='w';s.textContent=w;hl.appendChild(s);wEls.push(s);});
+var pw=$('pw'),cv=$('soil'),ctx=cv.getContext('2d'),panel=$('panel'),bd=$('bd'),timers=[],raf=0,ps=[],W=0,H=0,cols=['#2A1F12','#3A2A18','#1A130B','#4A3622'];
+function setup(){
+  var r=pw.getBoundingClientRect(),dpr=window.devicePixelRatio||1;W=r.width;H=r.height;
+  cv.width=W*dpr;cv.height=H*dpr;cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(dpr,0,0,dpr,0,0);
+  ps=[];var n=low?45:100,i;for(i=0;i<n;i++)ps.push({x:Math.random()*W,y:Math.random()*H,r:7+Math.random()*10,c:cols[i%4]});
+}
+function drawCover(){ctx.clearRect(0,0,W,H);ps.forEach(function(p){ctx.globalAlpha=1;ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill();});}
+function resetReveal(){timers.forEach(clearTimeout);timers=[];cancelAnimationFrame(raf);panel.classList.remove('lit');bd.classList.remove('on');wEls.forEach(function(w){w.classList.remove('on');});setup();drawCover();}
+function reveal(){
+  resetReveal();
+  if(reduce){ctx.clearRect(0,0,W,H);panel.classList.add('lit');wEls.forEach(function(w){w.classList.add('on');});bd.classList.add('on');return;}
+  var t0=performance.now();
+  timers.push(setTimeout(function(){panel.classList.add('lit');},260));
+  wEls.forEach(function(w,i){timers.push(setTimeout(function(){w.classList.add('on');},380+i*80));});
+  timers.push(setTimeout(function(){bd.classList.add('on');},1000));
+  timers.push(setTimeout(function(){buzz([14,50,28]);},520));
+  (function frame(now){
+    var t=now-t0;ctx.clearRect(0,0,W,H);
+    var k=t>250?Math.min(1,(t-250)/850):0,e=1-Math.pow(1-k,3);
+    ps.forEach(function(p){var dx=p.x-W/2,dy=p.y-H/2,d=Math.sqrt(dx*dx+dy*dy)||1;
+      var x=p.x+dx/d*e*(130+d),y=p.y+dy/d*e*(90+d*.6)+e*e*50;
+      ctx.globalAlpha=Math.max(0,1-e);ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(x,y,p.r*(1-e*.4),0,6.283);ctx.fill();});
+    if(t<1150)raf=requestAnimationFrame(frame);else ctx.clearRect(0,0,W,H);
+  })(t0);
+}
+$('p1').addEventListener('click',reveal);
+setup();drawCover();
+
+/* 2 Seed Arc */
+var s2=$('s2'),seed=$('seed'),add=$('add'),tree=$('tabTree'),tIcon=$('treeIcon'),busy=false;
+function center(el){var a=el.getBoundingClientRect(),b=s2.getBoundingClientRect();return {x:a.left-b.left+a.width/2,y:a.top-b.top+a.height/2};}
+function arc(){
+  if(busy)return;busy=true;
+  tree.classList.remove('landed');s2.classList.remove('rolled');
+  var a=center(add),b=center(tIcon),c={x:(a.x+b.x)/2,y:Math.min(a.y,b.y)-110};
+  if(reduce){tree.classList.add('landed');s2.classList.add('rolled');busy=false;return;}
+  var t0=performance.now(),dur=750,last=0;
+  seed.style.opacity=1;
+  (function frame(now){
+    var t=Math.min(1,(now-t0)/dur),e=ease(t),u=1-e;
+    var x=u*u*a.x+2*u*e*c.x+e*e*b.x,y=u*u*a.y+2*u*e*c.y+e*e*b.y;
+    seed.style.transform='translate('+x+'px,'+y+'px) scale('+(1-.4*e)+')';
+    if(now-last>28){last=now;var d=document.createElement('div');d.className='trail';d.style.left=x+'px';d.style.top=y+'px';s2.appendChild(d);setTimeout(function(){if(d.parentNode)d.parentNode.removeChild(d);},600);}
+    if(t<1)requestAnimationFrame(frame);
+    else{seed.style.opacity=0;tree.classList.add('landed');s2.classList.add('rolled');buzz(12);setTimeout(function(){busy=false;},900);}
+  })(t0);
+}
+add.addEventListener('click',arc);$('p2').addEventListener('click',arc);
+
+/* 3 Sap Flow */
+var NODES={a:{x:160,y:112,l:'Instant noodles',c:'#9BE564',r:15},b:{x:80,y:60,l:'Noodle block',c:'#5FE0E8',r:10},c:{x:240,y:60,l:'Frying oil',c:'#FF86B8',r:10},d:{x:80,y:172,l:'Seasoning',c:'#7FB8FF',r:10},e:{x:240,y:172,l:'Wheat',c:'#9BE564',r:10},f:{x:34,y:104,l:'Shelf life',c:'#5FE0E8',r:7},g:{x:292,y:104,l:'Palm oil trade',c:'#9BE564',r:7}};
+var EDGES=[['a','b'],['a','c'],['a','d'],['a','e'],['b','f'],['c','g']];
+var g=$('g'),focusId=null,extra=false;
+function build(){
+  var h='',i;
+  EDGES.forEach(function(e,i){var A=NODES[e[0]],B=NODES[e[1]];h+='<path class="edge" data-e="'+e.join('')+'" d="M'+A.x+' '+A.y+' L'+B.x+' '+B.y+'"/>';});
+  EDGES.forEach(function(e,i){var A=NODES[e[0]],B=NODES[e[1]];h+='<path class="sap" data-e="'+e.join('')+'" style="animation-delay:'+(-i*.45)+'s" d="M'+A.x+' '+A.y+' L'+B.x+' '+B.y+'"/>';});
+  Object.keys(NODES).forEach(function(k){var n=NODES[k];h+='<g class="nd" data-n="'+k+'" tabindex="0" role="button" aria-label="'+n.l+'"><circle class="breathe" style="animation-delay:'+(k.charCodeAt(0)%5)*-0.6+'s" cx="'+n.x+'" cy="'+n.y+'" r="'+n.r+'" fill="#151D18" stroke="'+n.c+'" stroke-width="2.4"/><text x="'+n.x+'" y="'+(n.y+n.r+13)+'" text-anchor="middle">'+n.l+'</text></g>';});
+  if(extra){var A=NODES.a,H2={x:160,y:212};h+='<path class="grow" pathLength="1" d="M'+A.x+' '+A.y+' L'+H2.x+' '+H2.y+'" fill="none" stroke="#FF86B8" stroke-width="2.4" stroke-linecap="round"/><g class="nd" data-n="h" tabindex="0" role="button" aria-label="Food shortages"><g class="pop"><circle cx="'+H2.x+'" cy="'+H2.y+'" r="10" fill="#151D18" stroke="#FF86B8" stroke-width="2.4"/><circle cx="'+H2.x+'" cy="'+H2.y+'" r="10" fill="none" stroke="#FF86B8" stroke-width="1.5" opacity=".6"/></g><text class="fadein" x="'+(H2.x+16)+'" y="'+(H2.y+4)+'">Food shortages</text></g>';}
+  g.innerHTML=h;
+  var ns=g.querySelectorAll('.nd');
+  for(i=0;i<ns.length;i++){(function(el){el.addEventListener('click',function(ev){ev.stopPropagation();focus(el.getAttribute('data-n'));});el.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();focus(el.getAttribute('data-n'));}});})(ns[i]);}
+}
+function focus(id){
+  focusId=(focusId===id)?null:id;
+  var ns=g.querySelectorAll('.nd'),es=g.querySelectorAll('.edge,.sap'),i;
+  var keep={};if(focusId){keep[focusId]=1;EDGES.forEach(function(e){if(e[0]===focusId)keep[e[1]]=1;if(e[1]===focusId)keep[e[0]]=1;});if(extra&&focusId==='a')keep.h=1;if(focusId==='h')keep.a=1;}
+  for(i=0;i<ns.length;i++)ns[i].classList.toggle('dim',!!focusId&&!keep[ns[i].getAttribute('data-n')]);
+  for(i=0;i<es.length;i++){var k=es[i].getAttribute('data-e');es[i].classList.toggle('dim',!!focusId&&!(k.indexOf(focusId)>-1));}
+}
+g.addEventListener('click',function(){if(focusId)focus(focusId);});
+function germinate(){extra=false;focusId=null;build();setTimeout(function(){extra=true;build();},reduce?0:200);}
+$('p3').addEventListener('click',germinate);
+build();
+
+/* 4 Foil Tilt */
+var foil=$('foil'),s4=$('s4'),swp=0;
+function setSheen(x,y){foil.style.setProperty('--sx',x.toFixed(3));foil.style.setProperty('--rx',(x*2-1).toFixed(3));foil.style.setProperty('--ry',(y*2-1).toFixed(3));}
+s4.addEventListener('pointermove',function(e){if(reduce)return;var r=s4.getBoundingClientRect();setSheen(Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),Math.min(1,Math.max(0,(e.clientY-r.top)/r.height)));});
+s4.addEventListener('pointerleave',function(){setSheen(.3,.5);});
+$('p4').addEventListener('click',function(){
+  if(reduce){setSheen(.6,.5);return;}
+  var t0=performance.now();cancelAnimationFrame(swp);
+  (function f(now){var t=Math.min(1,(now-t0)/1400),e=ease(t);setSheen(-.2+e*1.4,.5+Math.sin(t*6.283)*.25);if(t<1)swp=requestAnimationFrame(f);else setSheen(.3,.5);})(t0);
+});
+if(window.DeviceOrientationEvent&&('ontouchstart' in window)){
+  var tb=$('tilt');tb.hidden=false;
+  tb.addEventListener('click',function(){
+    function on(){window.addEventListener('deviceorientation',function(e){if(reduce||e.gamma==null)return;setSheen(Math.min(1,Math.max(0,.5+e.gamma/60)),Math.min(1,Math.max(0,.5+(e.beta-45)/60)));});tb.hidden=true;}
+    if(typeof DeviceOrientationEvent.requestPermission==='function'){DeviceOrientationEvent.requestPermission().then(function(s){if(s==='granted')on();}).catch(function(){});}else on();
+  });
+}
+setSheen(.3,.5);
+})();
+</script>
+</body>
+</html>

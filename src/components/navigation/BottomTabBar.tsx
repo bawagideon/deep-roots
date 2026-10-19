@@ -1,16 +1,30 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, GitFork, ScanLine } from "lucide-react";
+import { Home, ScanLine } from "lucide-react";
 
 export function BottomTabBar() {
   const pathname = usePathname();
+  const [isLanded, setIsLanded] = useState(false);
 
-  // Hide tab bar on scan viewfinder screen, welcome screen, settings, preferences, upgrade, or legal screens
+  useEffect(() => {
+    const handleLanded = () => {
+      setIsLanded(true);
+      const timer = setTimeout(() => setIsLanded(false), 950);
+      return () => clearTimeout(timer);
+    };
+
+    window.addEventListener("deeproots_seed_landed", handleLanded);
+    return () => window.removeEventListener("deeproots_seed_landed", handleLanded);
+  }, []);
+
+  // Hide tab bar on scan viewfinder screen, welcome screen, settings, preferences, upgrade, try, share, or legal screens
   if (
     pathname === "/scan" ||
     pathname === "/welcome" ||
+    pathname === "/try" ||
     pathname === "/upgrade" ||
     pathname === "/settings" ||
     pathname === "/preferences" ||
@@ -18,7 +32,10 @@ export function BottomTabBar() {
     pathname === "/terms" ||
     pathname === "/privacy" ||
     pathname === "/ai-disclosure" ||
-    pathname.startsWith("/scan/")
+    pathname.startsWith("/scan/") ||
+    pathname.startsWith("/r/") ||
+    pathname.startsWith("/sign-in") ||
+    pathname.startsWith("/sign-up")
   ) {
     return null;
   }
@@ -50,14 +67,47 @@ export function BottomTabBar() {
         </div>
       </Link>
 
-      {/* Tree tab */}
+      {/* Tree Sprout tab */}
       <Link
         href="/tree"
-        className={`flex flex-col items-center gap-1 transition-colors ${
+        id="tabTree"
+        data-tab="tree"
+        className={`flex flex-col items-center gap-1 transition-colors relative ${
           isTree ? "text-[#FFC857]" : "text-[#9AAAA0] hover:text-[#EAF1EC]"
-        }`}
+        } ${isLanded ? "landed" : ""}`}
       >
-        <GitFork className="w-6 h-6 stroke-[2.2] rotate-180" />
+        {/* Expanding Green Ripple */}
+        <span className="sprout-ring" />
+
+        {/* Sprout SVG Icon with Unfurling Leaves */}
+        <svg
+          id="treeIcon"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+          className="w-6 h-6"
+        >
+          {/* Stem */}
+          <path
+            d="M12 22v-9"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          {/* Left Leaf */}
+          <path
+            className="tab-leaf l1"
+            d="M12 15c-5 0-7-3-7-7 5 0 7 2 7 7z"
+            fill="#9BE564"
+          />
+          {/* Right Leaf */}
+          <path
+            className="tab-leaf l2"
+            d="M12 13c0-5 2-7 7-7 0 5-2 7-7 7z"
+            fill="#9BE564"
+          />
+        </svg>
+
         <span className="text-[12px] font-medium tracking-tight">Tree</span>
       </Link>
     </nav>

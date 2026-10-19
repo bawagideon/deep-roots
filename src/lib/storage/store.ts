@@ -163,6 +163,51 @@ export function clearAllData(): void {
   localStorage.removeItem(EDGES_STORAGE_KEY);
   localStorage.removeItem(STATS_STORAGE_KEY);
   localStorage.removeItem("deeproots_welcomed");
+  localStorage.removeItem("deeproots_guest_pending_claim");
+  window.dispatchEvent(new Event("deeproots_storage_updated"));
+}
+
+/**
+ * Clean sign-out data wipe:
+ * Per Deep Roots spec section 1.5, shared devices must never show the previous user's roots.
+ * Clears localStorage, sessionStorage, IndexedDB, and in-memory caches.
+ */
+export async function clearUserDataOnSignOut(): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(ROOTS_STORAGE_KEY);
+    localStorage.removeItem(EDGES_STORAGE_KEY);
+    localStorage.removeItem(STATS_STORAGE_KEY);
+    localStorage.removeItem("deeproots_welcomed");
+    localStorage.removeItem("deeproots_guest_pending_claim");
+    sessionStorage.clear();
+
+    // Clear IndexedDB databases if supported by browser
+    if (typeof window !== "undefined" && window.indexedDB && window.indexedDB.databases) {
+      try {
+        const dbs = await window.indexedDB.databases();
+        for (const db of dbs) {
+          if (db.name && (db.name.includes("deeproots") || db.name.includes("clerk"))) {
+            window.indexedDB.deleteDatabase(db.name);
+          }
+        }
+      } catch {}
+    }
+
+    // Clear user-specific cache storage
+    if (typeof window !== "undefined" && "caches" in window) {
+      try {
+        const cacheNames = await caches.keys();
+        for (const name of cacheNames) {
+          if (name.includes("data") || name.includes("roots") || name.includes("user")) {
+            await caches.delete(name);
+          }
+        }
+      } catch {}
+    }
+  } catch {}
+
+  window.dispatchEvent(new Event("deeproots_user_signed_out"));
   window.dispatchEvent(new Event("deeproots_storage_updated"));
 }
 
