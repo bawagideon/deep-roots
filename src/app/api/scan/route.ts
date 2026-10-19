@@ -108,6 +108,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (imageBase64 && imageBase64.length > 5.5 * 1024 * 1024) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "BAD_REQUEST",
+            message: "Base64 image payload exceeds maximum allowable size (4 MB).",
+            retryable: false,
+            requestId,
+          },
+        },
+        { status: 413 }
+      );
+    }
+
+    if (inputText && inputText.length > 50000) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "BAD_REQUEST",
+            message: "Input text exceeds maximum allowable length (50,000 characters).",
+            retryable: false,
+            requestId,
+          },
+        },
+        { status: 413 }
+      );
+    }
+
     // 3. Authoritative Server Identity
     const { clientId, userId } = await getClientIdentifier(req);
 

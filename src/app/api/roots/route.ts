@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerUser, supabaseAdmin } from "@/lib/supabase/server";
 import { StoredRoot, GraphEdge, Lens } from "@/types/roots";
+import { RootsCardSchema, validateRootsCardIntegrity } from "@/lib/schema";
+import { createHash } from "crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +32,7 @@ export async function GET(req: NextRequest) {
     if (rootsError) {
       console.error("Failed to fetch roots from Supabase:", rootsError.message);
       return NextResponse.json(
-        { error: "Failed to fetch user discoveries", details: rootsError.message },
+        { error: "Failed to fetch user discoveries", code: "DATABASE_ERROR" },
         { status: 500 }
       );
     }
@@ -82,7 +84,7 @@ export async function GET(req: NextRequest) {
   } catch (err: any) {
     console.error("Error in GET /api/roots:", err);
     return NextResponse.json(
-      { error: "Internal server error fetching roots", details: err.message },
+      { error: "Internal server error fetching roots", code: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }
@@ -91,6 +93,7 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/roots
  * Persists a new or updated root, its claims, claim sources, and graph edges to Supabase.
+ * Enforces ownership invariants, atomic dependent writes, and idempotent retries.
  */
 export async function POST(req: NextRequest) {
   const user = await getServerUser(req);
@@ -103,19 +106,102 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
-    const root: StoredRoot = body.root;
-    const edges: GraphEdge[] = body.edges || [];
+    const body = await req.json().catch(() => null);
+    if (!body || !body.root) {
+      return NextResponse.json(
+        { error: "Invalid payload: missing root object.", code: "BAD_REQUEST" },
+        { status: 400 }
+      );
+    }
 
-    if (!root || !root.id || !root.title || !root.card) {
+    const root: StoredRoot = body.root;
+    const edges: GraphEdge[] = Array.isArray(body.edges) ? body.edges : [];
+
+    // Basic structural checks
+    if (!root.id || typeof root.id !== "string" || !root.title || !root.card) {
       return NextResponse.json(
         { error: "Invalid root payload. Missing required fields.", code: "BAD_REQUEST" },
         { status: 400 }
       );
     }
 
-    // 1. Ensure user profile exists in Supabase
-    await supabaseAdmin.from("profiles").upsert(
+    // 1. Validate Card Schema & Cross-reference Integrity
+    const parsedCard = RootsCardSchema.safeParse(root.card);
+    if (!parsedCard.success) {
+      return NextResponse.json(
+        {
+          error: "Invalid card schema format",
+          code: "VALIDATION_FAILED",
+          details: parsedCard.error.flatten(),
+        },
+        { status: 400 }
+      );
+    }
+
+    const integrity = validateRootsCardIntegrity(parsedCard.data);
+    if (!integrity.isValid) {
+      return NextResponse.json(
+        {
+          error: "Card integrity check failed",
+          code: "INTEGRITY_FAILED",
+          details: integrity.errors,
+        },
+        { status: 400 }
+      );
+    }
+
+    // 2. ROOT OWNERSHIP COLLISION GUARD (P0 Blocker)
+    // Check if a root with this ID already exists. If owned by another user, REJECT!
+    const { data: existingRoot, error: checkError } = await supabaseAdmin
+      .from("roots")
+      .select("id, user_id")
+      .eq("id", root.id)
+      .maybeSingle();
+
+    if (checkError) {
+      console.error("Database error checking existing root ownership:", checkError.message);
+      return NextResponse.json(
+        { error: "Failed to verify root ownership", code: "DATABASE_ERROR" },
+        { status: 500 }
+      );
+    }
+
+    if (existingRoot && existingRoot.user_id !== user.id) {
+      return NextResponse.json(
+        {
+          error: "Forbidden: Cannot overwrite or reassign a discovery owned by another account.",
+          code: "FORBIDDEN",
+        },
+        { status: 403 }
+      );
+    }
+
+    // 3. PARENT ROOT OWNERSHIP GUARD
+    // If a parentId is provided, verify it exists and is owned by the same user
+    if (root.parentId) {
+      const { data: parentRoot, error: parentCheckError } = await supabaseAdmin
+        .from("roots")
+        .select("id, user_id")
+        .eq("id", root.parentId)
+        .maybeSingle();
+
+      if (parentCheckError || !parentRoot) {
+        return NextResponse.json(
+          { error: "Parent root does not exist", code: "INVALID_PARENT" },
+          { status: 400 }
+        );
+      }
+
+      if (parentRoot.user_id !== user.id) {
+        return NextResponse.json(
+          { error: "Forbidden: Parent root belongs to another account", code: "FORBIDDEN_PARENT" },
+          { status: 403 }
+        );
+      }
+    }
+
+    // 4. Ensure user profile exists in Supabase
+    const { error: profileError } = await supabaseAdmin.from("profiles").upsert(
       {
         id: user.id,
         updated_at: new Date().toISOString(),
@@ -123,7 +209,11 @@ export async function POST(req: NextRequest) {
       { onConflict: "id" }
     );
 
-    // 2. Upsert Root
+    if (profileError) {
+      console.error("Profile upsert notice:", profileError.message);
+    }
+
+    // 5. Upsert Root
     const { error: rootError } = await supabaseAdmin.from("roots").upsert(
       {
         id: root.id,
@@ -145,14 +235,18 @@ export async function POST(req: NextRequest) {
     );
 
     if (rootError) {
-      console.error("Failed to persist root in Supabase:", rootError);
+      console.error("Failed to persist root in Supabase:", rootError.message);
       return NextResponse.json(
-        { error: "Failed to save root discovery to cloud", details: rootError.message },
+        {
+          error: "Failed to save root discovery to cloud",
+          code: "PERSISTENCE_FAILED",
+          persistedInCloud: false,
+        },
         { status: 500 }
       );
     }
 
-    // 3. Upsert Claims & Claim Sources
+    // 6. Upsert Claims & Claim Sources (Idempotent & Verified)
     if (Array.isArray(root.card.claims)) {
       for (const claim of root.card.claims) {
         const claimDbId = `${root.id}_${claim.id}`;
@@ -163,10 +257,11 @@ export async function POST(req: NextRequest) {
             ? "open_question"
             : "interpretation";
 
-        await supabaseAdmin.from("claims").upsert(
+        const { error: claimError } = await supabaseAdmin.from("claims").upsert(
           {
             id: claimDbId,
             root_id: root.id,
+            user_id: user.id,
             local_id: claim.id,
             text: claim.text,
             claim_type: claimType,
@@ -176,25 +271,69 @@ export async function POST(req: NextRequest) {
           { onConflict: "id" }
         );
 
-        // Sources
+        if (claimError) {
+          console.error(`Failed to persist claim ${claimDbId}:`, claimError.message);
+          return NextResponse.json(
+            {
+              error: "Failed to persist dependent claims",
+              code: "PERSISTENCE_FAILED",
+              persistedInCloud: false,
+            },
+            { status: 500 }
+          );
+        }
+
+        // Sources: Use deterministic ID for idempotent upserting (prevents duplicate sources on re-sync)
         if (Array.isArray(claim.sources)) {
           for (const src of claim.sources) {
-            await supabaseAdmin.from("claim_sources").insert({
-              claim_id: claimDbId,
-              title: src.title,
-              url: src.url,
-              retrieved_at: src.retrievedAt || new Date().toISOString(),
-              excerpt: src.excerpt || null,
-            });
+            const urlHash = createHash("sha256").update(src.url || "").digest("hex").slice(0, 10);
+            const sourceDbId = `${claimDbId}_src_${urlHash}`;
+
+            const { error: sourceError } = await supabaseAdmin.from("claim_sources").upsert(
+              {
+                id: sourceDbId,
+                claim_id: claimDbId,
+                user_id: user.id,
+                title: src.title,
+                url: src.url,
+                retrieved_at: src.retrievedAt || new Date().toISOString(),
+                excerpt: src.excerpt || null,
+              },
+              { onConflict: "id" }
+            );
+
+            if (sourceError) {
+              console.error(`Failed to persist claim source ${sourceDbId}:`, sourceError.message);
+              return NextResponse.json(
+                {
+                  error: "Failed to persist dependent claim sources",
+                  code: "PERSISTENCE_FAILED",
+                  persistedInCloud: false,
+                },
+                { status: 500 }
+              );
+            }
           }
         }
       }
     }
 
-    // 4. Upsert Edges
+    // 7. Upsert Edges with Ownership Verification
     if (edges.length > 0) {
       for (const edge of edges) {
-        await supabaseAdmin.from("edges").upsert(
+        // Verify edge endpoints belong to current user
+        const { data: endpointRoots } = await supabaseAdmin
+          .from("roots")
+          .select("id, user_id")
+          .in("id", [edge.fromRoot, edge.toRoot]);
+
+        const validEndpoints = (endpointRoots || []).filter((r) => r.user_id === user.id);
+        if (validEndpoints.length < 2 && edge.fromRoot !== edge.toRoot) {
+          console.warn(`Skipping edge ${edge.id}: endpoints not verified for user ${user.id}`);
+          continue;
+        }
+
+        const { error: edgeError } = await supabaseAdmin.from("edges").upsert(
           {
             id: edge.id,
             user_id: user.id,
@@ -208,9 +347,22 @@ export async function POST(req: NextRequest) {
           },
           { onConflict: "id" }
         );
+
+        if (edgeError) {
+          console.error(`Failed to persist edge ${edge.id}:`, edgeError.message);
+          return NextResponse.json(
+            {
+              error: "Failed to persist graph edge",
+              code: "PERSISTENCE_FAILED",
+              persistedInCloud: false,
+            },
+            { status: 500 }
+          );
+        }
       }
     }
 
+    // Only return persistedInCloud: true when all writes succeeded
     return NextResponse.json({
       success: true,
       rootId: root.id,
@@ -219,7 +371,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error("Error in POST /api/roots:", err);
     return NextResponse.json(
-      { error: "Internal server error saving root", details: err.message },
+      { error: "Internal server error saving root", code: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }

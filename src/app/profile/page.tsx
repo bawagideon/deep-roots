@@ -10,6 +10,10 @@ import {
   ShieldCheck,
   ExternalLink,
   LogOut,
+  Loader2,
+  AlertTriangle,
+  WifiOff,
+  RefreshCw,
 } from "lucide-react";
 import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useUser, useClerk } from "@clerk/nextjs";
 import { UserStats, Lens } from "@/types/roots";
@@ -19,8 +23,11 @@ import {
   getStoredEdges,
   syncRootsFromCloud,
   clearUserDataOnSignOut,
+  setActiveUser,
 } from "@/lib/storage/store";
 import { LENSES } from "@/lib/constants";
+
+type SyncState = "idle" | "syncing" | "synced" | "failed" | "offline";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -31,24 +38,52 @@ export default function ProfilePage() {
   const [userRootsCount, setUserRootsCount] = useState(0);
   const [edgesCount, setEdgesCount] = useState(0);
   const [serverPlan, setServerPlan] = useState<"free" | "pro">("free");
+  const [syncStatus, setSyncStatus] = useState<SyncState>("idle");
+  const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+
+  const handleSync = async (targetUserId?: string | null) => {
+    const uid = targetUserId !== undefined ? targetUserId : user?.id;
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setSyncStatus("offline");
+      return;
+    }
+    setSyncStatus("syncing");
+    setSyncErrorMessage(null);
+    try {
+      const res = await syncRootsFromCloud(uid);
+      if (res.synced) {
+        setSyncStatus("synced");
+        const updatedRoots = getStoredRoots(uid).filter((r) => !r.isSeeded);
+        setUserRootsCount(updatedRoots.length);
+        setEdgesCount(getStoredEdges(uid).length);
+      } else {
+        if (res.error === "offline") {
+          setSyncStatus("offline");
+        } else {
+          setSyncStatus("failed");
+          setSyncErrorMessage(res.error || "Sync incomplete");
+        }
+      }
+    } catch (err: any) {
+      setSyncStatus("failed");
+      setSyncErrorMessage(err?.message || "Sync connection error");
+    }
+  };
 
   useEffect(() => {
-    const s = getUserStats();
+    setActiveUser(user?.id);
+    const s = getUserStats(user?.id);
     setStats(s);
 
-    const roots = getStoredRoots().filter((r) => !r.isSeeded);
+    const roots = getStoredRoots(user?.id).filter((r) => !r.isSeeded);
     setUserRootsCount(roots.length);
 
-    const edges = getStoredEdges();
+    const edges = getStoredEdges(user?.id);
     setEdgesCount(edges.length);
 
     // Sync user with backend profile and fetch live entitlement status
     if (user?.id) {
-      syncRootsFromCloud().then(() => {
-        const updatedRoots = getStoredRoots().filter((r) => !r.isSeeded);
-        setUserRootsCount(updatedRoots.length);
-        setEdgesCount(getStoredEdges().length);
-      });
+      handleSync(user.id);
 
       fetch("/api/me")
         .then((res) => res.json())
@@ -135,20 +170,62 @@ export default function ProfilePage() {
             </div>
           </div>
 
+          {/* Dynamic Sync Status Card */}
           <div className="bg-[#151D18] border border-[#2A372F] rounded-[22px] p-4 mb-6 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-[#1D2822] flex items-center justify-center text-[#9BE564]">
-                <Check className="w-5 h-5 stroke-[2.5]" />
-              </div>
+              {syncStatus === "syncing" && (
+                <div className="w-10 h-10 rounded-full bg-[#1D2822] flex items-center justify-center text-[#FFC857]">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                </div>
+              )}
+              {syncStatus === "synced" && (
+                <div className="w-10 h-10 rounded-full bg-[#1D2822] flex items-center justify-center text-[#9BE564]">
+                  <Check className="w-5 h-5 stroke-[2.5]" />
+                </div>
+              )}
+              {syncStatus === "failed" && (
+                <div className="w-10 h-10 rounded-full bg-[#2A1512] flex items-center justify-center text-[#FF6B6B]">
+                  <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
+                </div>
+              )}
+              {syncStatus === "offline" && (
+                <div className="w-10 h-10 rounded-full bg-[#1D2822] flex items-center justify-center text-[#9AAAA0]">
+                  <WifiOff className="w-5 h-5" />
+                </div>
+              )}
+              {syncStatus === "idle" && (
+                <div className="w-10 h-10 rounded-full bg-[#1D2822] flex items-center justify-center text-[#9AAAA0]">
+                  <Check className="w-5 h-5" />
+                </div>
+              )}
+
               <div>
                 <span className="text-[14px] font-bold text-[#EAF1EC] block">
-                  Tree Synced & Backed Up
+                  {syncStatus === "syncing" && "Syncing your Tree..."}
+                  {syncStatus === "synced" && "Tree Synced & Backed Up"}
+                  {syncStatus === "failed" && "Sync Incomplete"}
+                  {syncStatus === "offline" && "Offline - Local Only"}
+                  {syncStatus === "idle" && "Cloud Backup Ready"}
                 </span>
                 <span className="text-[12px] text-[#9AAAA0]">
-                  Connected to verified Clerk account
+                  {syncStatus === "syncing" && "Connecting to verified cloud storage..."}
+                  {syncStatus === "synced" && "Connected to verified Clerk account"}
+                  {syncStatus === "failed" && (syncErrorMessage || "Failed to sync some discoveries")}
+                  {syncStatus === "offline" && "Discoveries safely stored on this device"}
+                  {syncStatus === "idle" && "Ready to sync with verified account"}
                 </span>
               </div>
             </div>
+
+            {(syncStatus === "failed" || syncStatus === "offline") && (
+              <button
+                onClick={() => handleSync()}
+                className="px-3 py-1.5 rounded-full bg-[#1D2822] hover:bg-[#2A372F] border border-[#2A372F] text-[12px] font-bold text-[#FFC857] flex items-center gap-1.5 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Retry
+              </button>
+            )}
           </div>
         </SignedIn>
 

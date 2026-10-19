@@ -247,31 +247,25 @@ as $$
 declare
     v_current integer;
 begin
-    -- Check and lock row for update
+    -- 1. Ensure the row exists atomically without crashing concurrent first requests
+    insert into public.usage (user_id, day, kind, count)
+    values (p_user_id, p_day, p_kind, 0)
+    on conflict (user_id, day, kind) do nothing;
+
+    -- 2. Lock row authoritatively for update
     select count into v_current
     from public.usage
     where user_id = p_user_id and day = p_day and kind = p_kind
     for update;
 
-    if not found then
-        -- First usage of the day
-        if p_limit > 0 then
-            insert into public.usage (user_id, day, kind, count)
-            values (p_user_id, p_day, p_kind, 1);
-            return query select true, 1, p_limit - 1;
-        else
-            return query select false, 0, 0;
-        end if;
+    -- 3. Check limit and increment atomically
+    if v_current < p_limit then
+        update public.usage
+        set count = v_current + 1
+        where user_id = p_user_id and day = p_day and kind = p_kind;
+        return query select true, v_current + 1, p_limit - (v_current + 1);
     else
-        -- Check limit
-        if v_current < p_limit then
-            update public.usage
-            set count = v_current + 1
-            where user_id = p_user_id and day = p_day and kind = p_kind;
-            return query select true, v_current + 1, p_limit - (v_current + 1);
-        else
-            return query select false, v_current, 0;
-        end if;
+        return query select false, v_current, 0;
     end if;
 end;
 $$;
@@ -416,14 +410,71 @@ drop policy if exists "Users can delete own edges" on public.edges;
 create policy "Users can delete own edges" on public.edges
     for delete using (coalesce(auth.jwt()->>'sub', auth.uid()::text) = user_id);
 
--- Claims & sources
+-- Claims & sources (scoped to root ownership)
 drop policy if exists "Claims readable with root" on public.claims;
-create policy "Claims readable with root" on public.claims
-    for select using (true);
+drop policy if exists "Users can view claims of readable roots" on public.claims;
+create policy "Users can view claims of readable roots" on public.claims
+    for select using (
+        exists (
+            select 1 from public.roots
+            where roots.id = claims.root_id
+              and (roots.user_id is null or roots.user_id = coalesce(auth.jwt()->>'sub', auth.uid()::text))
+        )
+    );
+
+drop policy if exists "Users can insert claims for own roots" on public.claims;
+create policy "Users can insert claims for own roots" on public.claims
+    for insert with check (
+        exists (
+            select 1 from public.roots
+            where roots.id = claims.root_id
+              and (roots.user_id is null or roots.user_id = coalesce(auth.jwt()->>'sub', auth.uid()::text))
+        )
+    );
+
+drop policy if exists "Users can delete claims of own roots" on public.claims;
+create policy "Users can delete claims of own roots" on public.claims
+    for delete using (
+        exists (
+            select 1 from public.roots
+            where roots.id = claims.root_id
+              and roots.user_id = coalesce(auth.jwt()->>'sub', auth.uid()::text)
+        )
+    );
 
 drop policy if exists "Claim sources readable" on public.claim_sources;
-create policy "Claim sources readable" on public.claim_sources
-    for select using (true);
+drop policy if exists "Users can view claim sources of readable roots" on public.claim_sources;
+create policy "Users can view claim sources of readable roots" on public.claim_sources
+    for select using (
+        exists (
+            select 1 from public.claims
+            join public.roots on roots.id = claims.root_id
+            where claims.id = claim_sources.claim_id
+              and (roots.user_id is null or roots.user_id = coalesce(auth.jwt()->>'sub', auth.uid()::text))
+        )
+    );
+
+drop policy if exists "Users can insert claim sources for own roots" on public.claim_sources;
+create policy "Users can insert claim sources for own roots" on public.claim_sources
+    for insert with check (
+        exists (
+            select 1 from public.claims
+            join public.roots on roots.id = claims.root_id
+            where claims.id = claim_sources.claim_id
+              and (roots.user_id is null or roots.user_id = coalesce(auth.jwt()->>'sub', auth.uid()::text))
+        )
+    );
+
+drop policy if exists "Users can delete claim sources of own roots" on public.claim_sources;
+create policy "Users can delete claim sources of own roots" on public.claim_sources
+    for delete using (
+        exists (
+            select 1 from public.claims
+            join public.roots on roots.id = claims.root_id
+            where claims.id = claim_sources.claim_id
+              and roots.user_id = coalesce(auth.jwt()->>'sub', auth.uid()::text)
+        )
+    );
 
 -- Shares
 drop policy if exists "Public shares readable by token" on public.shares;

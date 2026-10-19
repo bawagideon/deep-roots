@@ -8,11 +8,71 @@ import {
   UserPreferences,
   UserProfile,
 } from "@/types/roots";
-import { SEEDED_ROOTS, SEEDED_EDGES, LENSES } from "@/lib/constants";
+import { SEEDED_ROOTS, SEEDED_EDGES } from "@/lib/constants";
 
-const ROOTS_STORAGE_KEY = "deeproots_roots_v2";
-const EDGES_STORAGE_KEY = "deeproots_edges_v2";
-const STATS_STORAGE_KEY = "deeproots_stats_v2";
+const ACTIVE_USER_KEY = "deeproots_active_user_id";
+
+let currentActiveUserId: string | null = null;
+
+export function setActiveUser(userId: string | null | undefined): void {
+  currentActiveUserId = userId || null;
+  if (typeof window === "undefined") return;
+  try {
+    if (userId) {
+      localStorage.setItem(ACTIVE_USER_KEY, userId);
+    } else {
+      localStorage.removeItem(ACTIVE_USER_KEY);
+    }
+  } catch {}
+}
+
+export function getActiveUser(): string | null {
+  if (typeof window === "undefined") return null;
+  if (currentActiveUserId) return currentActiveUserId;
+  try {
+    return localStorage.getItem(ACTIVE_USER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function getRootsKey(userId?: string | null): string {
+  const uid = userId !== undefined ? userId : getActiveUser();
+  return uid ? `deeproots_${uid}_roots` : "deeproots_guest_roots";
+}
+
+function getEdgesKey(userId?: string | null): string {
+  const uid = userId !== undefined ? userId : getActiveUser();
+  return uid ? `deeproots_${uid}_edges` : "deeproots_guest_edges";
+}
+
+function getStatsKey(userId?: string | null): string {
+  const uid = userId !== undefined ? userId : getActiveUser();
+  return uid ? `deeproots_${uid}_stats` : "deeproots_guest_stats";
+}
+
+function migrateLegacyStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const legacyRoots = localStorage.getItem("deeproots_roots_v2");
+    if (legacyRoots && !localStorage.getItem("deeproots_guest_roots")) {
+      localStorage.setItem("deeproots_guest_roots", legacyRoots);
+      localStorage.removeItem("deeproots_roots_v2");
+    }
+
+    const legacyEdges = localStorage.getItem("deeproots_edges_v2");
+    if (legacyEdges && !localStorage.getItem("deeproots_guest_edges")) {
+      localStorage.setItem("deeproots_guest_edges", legacyEdges);
+      localStorage.removeItem("deeproots_edges_v2");
+    }
+
+    const legacyStats = localStorage.getItem("deeproots_stats_v2");
+    if (legacyStats && !localStorage.getItem("deeproots_guest_stats")) {
+      localStorage.setItem("deeproots_guest_stats", legacyStats);
+      localStorage.removeItem("deeproots_stats_v2");
+    }
+  } catch {}
+}
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
   lenses: ["language", "culture", "tech"],
@@ -96,13 +156,15 @@ const INITIAL_STATS: UserStats = {
   profile: DEFAULT_PROFILE,
 };
 
-export function getStoredRoots(): StoredRoot[] {
+export function getStoredRoots(userId?: string | null): StoredRoot[] {
   if (typeof window === "undefined") return [];
+  migrateLegacyStorage();
   try {
-    const raw = localStorage.getItem(ROOTS_STORAGE_KEY);
+    const key = getRootsKey(userId);
+    const raw = localStorage.getItem(key);
     if (!raw) {
       const initial = SEEDED_ROOTS.map((r) => ({ ...r, isSeeded: true }));
-      localStorage.setItem(ROOTS_STORAGE_KEY, JSON.stringify(initial));
+      localStorage.setItem(key, JSON.stringify(initial));
       return initial;
     }
     return JSON.parse(raw);
@@ -111,9 +173,11 @@ export function getStoredRoots(): StoredRoot[] {
   }
 }
 
-export function saveRoot(root: StoredRoot): void {
+export function saveRoot(root: StoredRoot, userId?: string | null): void {
   if (typeof window === "undefined") return;
-  const roots = getStoredRoots();
+  const uid = userId !== undefined ? userId : getActiveUser();
+  const key = getRootsKey(uid);
+  const roots = getStoredRoots(uid);
   const existingIdx = roots.findIndex((r) => r.id === root.id);
   let updated: StoredRoot[];
   if (existingIdx >= 0) {
@@ -122,11 +186,11 @@ export function saveRoot(root: StoredRoot): void {
   } else {
     updated = [root, ...roots];
   }
-  localStorage.setItem(ROOTS_STORAGE_KEY, JSON.stringify(updated));
-  updateStatsOnSave(root);
+  localStorage.setItem(key, JSON.stringify(updated));
+  updateStatsOnSave(root, uid);
   window.dispatchEvent(new Event("deeproots_storage_updated"));
 
-  // Asynchronously persist to Supabase cloud
+  // Asynchronously persist to Supabase cloud if online
   if (navigator.onLine) {
     fetch("/api/roots", {
       method: "POST",
@@ -136,34 +200,46 @@ export function saveRoot(root: StoredRoot): void {
   }
 }
 
-export function deleteRoot(id: string): void {
+export function deleteRoot(id: string, userId?: string | null): void {
   if (typeof window === "undefined") return;
-  const roots = getStoredRoots().filter((r) => r.id !== id);
-  localStorage.setItem(ROOTS_STORAGE_KEY, JSON.stringify(roots));
+  const uid = userId !== undefined ? userId : getActiveUser();
+  const rootsKey = getRootsKey(uid);
+  const edgesKey = getEdgesKey(uid);
 
-  const edges = getStoredEdges().filter((e) => e.fromRoot !== id && e.toRoot !== id);
-  localStorage.setItem(EDGES_STORAGE_KEY, JSON.stringify(edges));
+  const roots = getStoredRoots(uid).filter((r) => r.id !== id);
+  localStorage.setItem(rootsKey, JSON.stringify(roots));
 
-  const stats = getUserStats();
+  const edges = getStoredEdges(uid).filter((e) => e.fromRoot !== id && e.toRoot !== id);
+  localStorage.setItem(edgesKey, JSON.stringify(edges));
+
+  const stats = getUserStats(uid);
   stats.totalRoots = roots.filter((r) => !r.isSeeded).length;
   stats.totalLinks = edges.length;
-  saveUserStats(stats);
+  saveUserStats(stats, uid);
 
   window.dispatchEvent(new Event("deeproots_storage_updated"));
 
   // Asynchronously delete from Supabase cloud
   if (navigator.onLine) {
-    fetch(`/api/roots/${id}`, { method: "DELETE" }).catch(() => {});
+    fetch(`/api/roots/${id}`, { method: "DELETE" }).catch((err) => {
+      console.warn("Failed to delete root from server:", err);
+    });
   }
 }
 
 export function clearAllData(): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(ROOTS_STORAGE_KEY);
-  localStorage.removeItem(EDGES_STORAGE_KEY);
-  localStorage.removeItem(STATS_STORAGE_KEY);
-  localStorage.removeItem("deeproots_welcomed");
-  localStorage.removeItem("deeproots_guest_pending_claim");
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("deeproots_")) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  } catch {}
+  currentActiveUserId = null;
   window.dispatchEvent(new Event("deeproots_storage_updated"));
 }
 
@@ -175,11 +251,14 @@ export function clearAllData(): void {
 export async function clearUserDataOnSignOut(): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    localStorage.removeItem(ROOTS_STORAGE_KEY);
-    localStorage.removeItem(EDGES_STORAGE_KEY);
-    localStorage.removeItem(STATS_STORAGE_KEY);
-    localStorage.removeItem("deeproots_welcomed");
-    localStorage.removeItem("deeproots_guest_pending_claim");
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("deeproots_")) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
     sessionStorage.clear();
 
     // Clear IndexedDB databases if supported by browser
@@ -207,16 +286,19 @@ export async function clearUserDataOnSignOut(): Promise<void> {
     }
   } catch {}
 
+  currentActiveUserId = null;
   window.dispatchEvent(new Event("deeproots_user_signed_out"));
   window.dispatchEvent(new Event("deeproots_storage_updated"));
 }
 
-export function getStoredEdges(): GraphEdge[] {
+export function getStoredEdges(userId?: string | null): GraphEdge[] {
   if (typeof window === "undefined") return [];
+  migrateLegacyStorage();
   try {
-    const raw = localStorage.getItem(EDGES_STORAGE_KEY);
+    const key = getEdgesKey(userId);
+    const raw = localStorage.getItem(key);
     if (!raw) {
-      localStorage.setItem(EDGES_STORAGE_KEY, JSON.stringify(SEEDED_EDGES));
+      localStorage.setItem(key, JSON.stringify(SEEDED_EDGES));
       return SEEDED_EDGES;
     }
     return JSON.parse(raw);
@@ -225,16 +307,18 @@ export function getStoredEdges(): GraphEdge[] {
   }
 }
 
-export function saveEdge(edge: GraphEdge): void {
+export function saveEdge(edge: GraphEdge, userId?: string | null): void {
   if (typeof window === "undefined") return;
-  const edges = getStoredEdges();
+  const uid = userId !== undefined ? userId : getActiveUser();
+  const key = getEdgesKey(uid);
+  const edges = getStoredEdges(uid);
   if (!edges.some((e) => e.id === edge.id || (e.fromRoot === edge.fromRoot && e.toRoot === edge.toRoot))) {
     const updated = [...edges, edge];
-    localStorage.setItem(EDGES_STORAGE_KEY, JSON.stringify(updated));
+    localStorage.setItem(key, JSON.stringify(updated));
 
-    const stats = getUserStats();
+    const stats = getUserStats(uid);
     stats.totalLinks = updated.length;
-    saveUserStats(stats);
+    saveUserStats(stats, uid);
 
     window.dispatchEvent(new Event("deeproots_storage_updated"));
   }
@@ -243,71 +327,139 @@ export function saveEdge(edge: GraphEdge): void {
 /**
  * Bidirectional cloud synchronization:
  * Fetches user discoveries from Supabase, merges into local storage, and pushes
- * any offline/guest discoveries up to the authenticated cloud account.
+ * any offline or guest discoveries up to the authenticated cloud account.
+ * Awaits all server writes and returns honest status without reporting false syncs.
  */
-export async function syncRootsFromCloud(): Promise<{ synced: boolean; count: number }> {
-  if (typeof window === "undefined" || !navigator.onLine) {
-    return { synced: false, count: 0 };
+export async function syncRootsFromCloud(userId?: string | null): Promise<{
+  synced: boolean;
+  count: number;
+  error?: string;
+}> {
+  if (typeof window === "undefined") {
+    return { synced: false, count: 0, error: "Window undefined" };
   }
+  if (!navigator.onLine) {
+    return { synced: false, count: 0, error: "offline" };
+  }
+
+  if (userId) {
+    setActiveUser(userId);
+  }
+
+  const activeUid = userId !== undefined ? userId : getActiveUser();
 
   try {
     const res = await fetch("/api/roots");
-    if (!res.ok) return { synced: false, count: 0 };
+    if (!res.ok) {
+      return { synced: false, count: 0, error: `Server returned ${res.status}` };
+    }
 
     const data = await res.json();
-    if (!data.authenticated) return { synced: false, count: 0 };
+    if (!data.authenticated) {
+      return { synced: false, count: 0, error: "Not authenticated" };
+    }
 
     const cloudRoots: StoredRoot[] = data.roots || [];
-    const localRoots = getStoredRoots();
-
-    // 1. Merge cloud roots into local storage
     const cloudMap = new Map(cloudRoots.map((r) => [r.id, r]));
-    const localNonSeeded = localRoots.filter((r) => !r.isSeeded);
 
-    // 2. Identify any local roots not yet in cloud (e.g. created while guest) and upload them
-    const pendingUpload = localNonSeeded.filter((r) => !cloudMap.has(r.id));
+    // 1. Process Guest Discoveries (Migrate guest items created prior to sign in)
+    const guestRoots = getStoredRoots(null).filter((r) => !r.isSeeded);
+    const uploadedGuestIds: string[] = [];
+
+    if (guestRoots.length > 0) {
+      for (const gr of guestRoots) {
+        if (!cloudMap.has(gr.id)) {
+          const upRes = await fetch("/api/roots", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ root: gr }),
+          });
+          if (!upRes.ok) {
+            return {
+              synced: false,
+              count: cloudRoots.length,
+              error: `Failed to migrate guest discovery: ${gr.title}`,
+            };
+          }
+          cloudMap.set(gr.id, gr);
+        }
+        uploadedGuestIds.push(gr.id);
+      }
+
+      // Clean up migrated guest discoveries from guest storage
+      const remainingGuest = getStoredRoots(null).filter(
+        (r) => !uploadedGuestIds.includes(r.id)
+      );
+      localStorage.setItem(getRootsKey(null), JSON.stringify(remainingGuest));
+    }
+
+    // 2. Identify and upload any pending local roots for THIS user created offline
+    const localUserRoots = getStoredRoots(activeUid).filter((r) => !r.isSeeded);
+    const pendingUpload = localUserRoots.filter((r) => !cloudMap.has(r.id));
+
     for (const r of pendingUpload) {
-      fetch("/api/roots", {
+      const upRes = await fetch("/api/roots", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ root: r }),
-      }).catch(() => {});
+      });
+      if (!upRes.ok) {
+        return {
+          synced: false,
+          count: cloudRoots.length,
+          error: `Failed to upload discovery: ${r.title}`,
+        };
+      }
+      cloudMap.set(r.id, r);
     }
 
-    // 3. Update local storage with full cloud set + seeded
+    // 3. Update local user storage with full authoritative cloud set + seeded
     const seeded = SEEDED_ROOTS.map((r) => ({ ...r, isSeeded: true }));
     const mergedMap = new Map<string, StoredRoot>();
 
     cloudRoots.forEach((r) => mergedMap.set(r.id, r));
     pendingUpload.forEach((r) => mergedMap.set(r.id, r));
+    guestRoots.forEach((r) => mergedMap.set(r.id, r));
     seeded.forEach((r) => {
       if (!mergedMap.has(r.id)) mergedMap.set(r.id, r);
     });
 
     const finalRoots = Array.from(mergedMap.values());
-    localStorage.setItem(ROOTS_STORAGE_KEY, JSON.stringify(finalRoots));
+    localStorage.setItem(getRootsKey(activeUid), JSON.stringify(finalRoots));
 
+    // 4. Merge Edges
     if (data.edges && Array.isArray(data.edges) && data.edges.length > 0) {
-      const localEdges = getStoredEdges();
+      const localEdges = getStoredEdges(activeUid);
       const edgeMap = new Map<string, GraphEdge>();
       localEdges.forEach((e) => edgeMap.set(e.id, e));
       data.edges.forEach((e: GraphEdge) => edgeMap.set(e.id, e));
-      localStorage.setItem(EDGES_STORAGE_KEY, JSON.stringify(Array.from(edgeMap.values())));
+      localStorage.setItem(getEdgesKey(activeUid), JSON.stringify(Array.from(edgeMap.values())));
     }
 
+    // 5. Update stats count
+    const stats = getUserStats(activeUid);
+    stats.totalRoots = finalRoots.filter((r) => !r.isSeeded).length;
+    stats.totalLinks = getStoredEdges(activeUid).length;
+    saveUserStats(stats, activeUid);
+
     window.dispatchEvent(new Event("deeproots_storage_updated"));
-    return { synced: true, count: cloudRoots.length + pendingUpload.length };
-  } catch (err) {
-    return { synced: false, count: 0 };
+    return {
+      synced: true,
+      count: finalRoots.filter((r) => !r.isSeeded).length,
+    };
+  } catch (err: any) {
+    return { synced: false, count: 0, error: err?.message || "Sync network error" };
   }
 }
 
-export function getUserStats(): UserStats {
+export function getUserStats(userId?: string | null): UserStats {
   if (typeof window === "undefined") return INITIAL_STATS;
+  migrateLegacyStorage();
   try {
-    const raw = localStorage.getItem(STATS_STORAGE_KEY);
+    const key = getStatsKey(userId);
+    const raw = localStorage.getItem(key);
     if (!raw) {
-      localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(INITIAL_STATS));
+      localStorage.setItem(key, JSON.stringify(INITIAL_STATS));
       return INITIAL_STATS;
     }
     const parsed = JSON.parse(raw);
@@ -322,46 +474,47 @@ export function getUserStats(): UserStats {
   }
 }
 
-export function saveUserStats(stats: UserStats): void {
+export function saveUserStats(stats: UserStats, userId?: string | null): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(stats));
+  const key = getStatsKey(userId);
+  localStorage.setItem(key, JSON.stringify(stats));
   window.dispatchEvent(new Event("deeproots_storage_updated"));
 }
 
-export function getUserPreferences(): UserPreferences {
-  return getUserStats().preferences || DEFAULT_PREFERENCES;
+export function getUserPreferences(userId?: string | null): UserPreferences {
+  return getUserStats(userId).preferences || DEFAULT_PREFERENCES;
 }
 
-export function saveUserPreferences(prefs: UserPreferences): void {
-  const stats = getUserStats();
+export function saveUserPreferences(prefs: UserPreferences, userId?: string | null): void {
+  const stats = getUserStats(userId);
   stats.preferences = prefs;
   stats.selectedLenses = prefs.lenses;
-  saveUserStats(stats);
+  saveUserStats(stats, userId);
 }
 
-export function getUserProfile(): UserProfile {
-  return getUserStats().profile || DEFAULT_PROFILE;
+export function getUserProfile(userId?: string | null): UserProfile {
+  return getUserStats(userId).profile || DEFAULT_PROFILE;
 }
 
-export function saveUserProfile(prof: UserProfile): void {
-  const stats = getUserStats();
+export function saveUserProfile(prof: UserProfile, userId?: string | null): void {
+  const stats = getUserStats(userId);
   stats.profile = prof;
-  saveUserStats(stats);
+  saveUserStats(stats, userId);
 }
 
-export function upgradePlan(plan: "free" | "pro"): void {
-  const stats = getUserStats();
+export function upgradePlan(plan: "free" | "pro", userId?: string | null): void {
+  const stats = getUserStats(userId);
   if (stats.profile) stats.profile.plan = plan;
   stats.scansLimit = plan === "pro" ? 50 : 5;
-  saveUserStats(stats);
+  saveUserStats(stats, userId);
 }
 
-function updateStatsOnSave(newRoot: StoredRoot): void {
-  const stats = getUserStats();
+function updateStatsOnSave(newRoot: StoredRoot, userId?: string | null): void {
+  const stats = getUserStats(userId);
   const today = new Date().toISOString().split("T")[0];
 
   stats.scansToday = (stats.scansToday || 0) + 1;
-  const userRoots = getStoredRoots().filter((r) => !r.isSeeded);
+  const userRoots = getStoredRoots(userId).filter((r) => !r.isSeeded);
   stats.totalRoots = userRoots.length;
 
   if (newRoot.depth > 0) {
@@ -407,5 +560,5 @@ function updateStatsOnSave(newRoot: StoredRoot): void {
     if (exploredLensesCount >= 6) allSixBadge.unlocked = true;
   }
 
-  saveUserStats(stats);
+  saveUserStats(stats, userId);
 }

@@ -5,8 +5,31 @@ import { supabaseAdmin, getServerSetting } from "@/lib/supabase/server";
 const localSubscriptionCache = new Map<string, { plan: "free" | "pro"; cachedAt: number }>();
 
 /**
+ * Sets the in-memory cached subscription plan for a user ID.
+ */
+export function setCachedPlan(userId: string, plan: "free" | "pro"): void {
+  localSubscriptionCache.set(userId, { plan, cachedAt: Date.now() });
+}
+
+/**
+ * Invalidates the cached subscription plan for a specific user ID.
+ * Call this immediately after processing billing webhooks or admin updates.
+ */
+export function invalidateSubscriptionCache(userId: string): void {
+  localSubscriptionCache.delete(userId);
+}
+
+/**
+ * Clears the entire subscription cache.
+ */
+export function clearSubscriptionCache(): void {
+  localSubscriptionCache.clear();
+}
+
+/**
  * Authoritatively calculates entitlements for a user on the server.
  * Reads from Supabase `profiles` table and server-controlled operations settings.
+ * Resilient against transient database errors: will NOT cache DB failure as a free plan downgrade.
  */
 export async function getEntitlements(userId?: string): Promise<Entitlements> {
   // 1. Check server-controlled kill switch
@@ -35,18 +58,25 @@ export async function getEntitlements(userId?: string): Promise<Entitlements> {
       plan = cached.plan;
     } else {
       try {
-        const { data: profile } = await supabaseAdmin
+        const { data: profile, error } = await supabaseAdmin
           .from("profiles")
           .select("plan")
           .eq("id", userId)
           .single();
 
-        if (profile?.plan === "pro") {
-          plan = "pro";
+        if (!error && profile) {
+          plan = profile.plan === "pro" ? "pro" : "free";
+          // Only cache when authoritative DB response was successful
+          localSubscriptionCache.set(userId, { plan, cachedAt: Date.now() });
+        } else if (cached) {
+          // If DB returned an error but we have a prior cached entry, preserve it
+          plan = cached.plan;
         }
-        localSubscriptionCache.set(userId, { plan, cachedAt: Date.now() });
       } catch (err) {
-        // Fallback to cached or free plan if database is unreachable
+        // Transient network/connection exception: preserve cached plan if available
+        if (cached) {
+          plan = cached.plan;
+        }
       }
     }
   }
@@ -79,14 +109,21 @@ export async function getEntitlements(userId?: string): Promise<Entitlements> {
 }
 
 export async function setSubscription(userId: string, plan: "free" | "pro"): Promise<boolean> {
+  invalidateSubscriptionCache(userId);
   localSubscriptionCache.set(userId, { plan, cachedAt: Date.now() });
   try {
     const { error } = await supabaseAdmin
       .from("profiles")
       .update({ plan, updated_at: new Date().toISOString() })
       .eq("id", userId);
-    return !error;
+
+    if (error) {
+      invalidateSubscriptionCache(userId);
+      return false;
+    }
+    return true;
   } catch {
+    invalidateSubscriptionCache(userId);
     return false;
   }
 }
